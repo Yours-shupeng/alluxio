@@ -26,6 +26,8 @@ import java.nio.channels.FileChannel;
 import java.util.Collections;
 import java.util.List;
 
+import org.apache.commons.cli.CommandLine;
+
 import com.google.common.io.Closer;
 
 import tachyon.Constants;
@@ -183,17 +185,29 @@ public class TFsShell implements Closeable {
    * @throws IOException
    */
   public int copyToLocal(String[] argv) throws IOException {
-    if (argv.length != 3) {
-      System.out.println("Usage: tfs copyToLocal <src> <localdst>");
+    CommandLine commandLine = Utils.parse(argv);
+    if (argv.length != 3 && argv.length != 5 || argv.length == 5 
+        && !commandLine.hasOption("bufferSize")) {
+      System.out.println("Usage: tfs copyToLocal <src> <localdst> [-bufferSize size]");
       return -1;
     }
-
+    
+    int bufferSize = 512;
+    if (commandLine.hasOption("bufferSize")) {
+      String size = commandLine.getOptionValue("bufferSize");
+      try {
+        bufferSize = Math.max(bufferSize, Integer.parseInt(size));
+      } catch (java.lang.NumberFormatException e) {
+        System.out.println("Invalid bufferSize value, the value must be an integer.");
+      }
+    }
+    
     TachyonURI srcPath = new TachyonURI(argv[1]);
     String dstPath = argv[2];
     File dst = new File(dstPath);
     TachyonFS tachyonClient = createFS(srcPath);
     TachyonFile tFile = tachyonClient.getFile(srcPath);
-
+    
     // tachyonClient.getFile() catches FileDoesNotExist exceptions and returns null
     if (tFile == null) {
       throw new IOException(srcPath.toString());
@@ -203,7 +217,7 @@ public class TFsShell implements Closeable {
     try {
       InStream is = closer.register(tFile.getInStream(ReadType.NO_CACHE));
       FileOutputStream out = closer.register(new FileOutputStream(dst));
-      byte[] buf = new byte[512];
+      byte[] buf = new byte[bufferSize];
       int t = is.read(buf);
       while (t != -1) {
         out.write(buf, 0, t);
@@ -454,7 +468,7 @@ public class TFsShell implements Closeable {
     System.out.println("       [touch <path>]");
     System.out.println("       [mv <src> <dst>]");
     System.out.println("       [copyFromLocal <src> <remoteDst>]");
-    System.out.println("       [copyToLocal <src> <localDst>]");
+    System.out.println("       [copyToLocal <src> <localDst> [-bufferSize size]]");
     System.out.println("       [fileinfo <path>]");
     System.out.println("       [location <path>]");
     System.out.println("       [report <path>]");
