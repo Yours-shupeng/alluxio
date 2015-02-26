@@ -79,7 +79,7 @@ public class MasterService {
      * @param blockId
      * @param length
      */
-    public void worker_cacheBlock(long workerId, long workerUsedBytes, long storageDirId, long blockId, long length) throws FileDoesNotExistException, BlockInfoException, org.apache.thrift.TException;
+    public void worker_cacheBlock(long workerId, long usedBytesOnTier, long storageDirId, long blockId, long length) throws FileDoesNotExistException, BlockInfoException, org.apache.thrift.TException;
 
     public Set<Integer> worker_getPinIdList() throws org.apache.thrift.TException;
 
@@ -407,7 +407,7 @@ public class MasterService {
       throw new org.apache.thrift.TApplicationException(org.apache.thrift.TApplicationException.MISSING_RESULT, "worker_heartbeat failed: unknown result");
     }
 
-    public void worker_cacheBlock(long workerId, long workerUsedBytes, long storageDirId, long blockId, long length) throws FileDoesNotExistException, BlockInfoException, org.apache.thrift.TException
+    public void worker_cacheBlock(long workerId, long usedBytesOnTier, long storageDirId, long blockId, long length) throws FileDoesNotExistException, BlockInfoException, org.apache.thrift.TException
     {
       send_worker_cacheBlock(workerId, usedBytesOnTier, storageDirId, blockId, length);
       recv_worker_cacheBlock();

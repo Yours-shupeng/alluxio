@@ -296,9 +296,9 @@ public class MasterServiceHandler implements MasterService.Iface {
   }
 
   @Override
-  public void worker_cacheBlock(long workerId, long workerUsedBytes, long storageDirId,
+  public void worker_cacheBlock(long workerId, long usedBytesOnTier, long storageDirId,
       long blockId, long length) throws FileDoesNotExistException, BlockInfoException, TException {
-    mMasterInfo.cacheBlock(workerId, workerUsedBytes, storageDirId, blockId, length);
+    mMasterInfo.cacheBlock(workerId, usedBytesOnTier, storageDirId, blockId, length);
   }
 
   @Override

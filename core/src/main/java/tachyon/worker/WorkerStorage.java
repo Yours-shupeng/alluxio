@@ -628,7 +628,7 @@ public class WorkerStorage {
    * @return used bytes on each storage tier
    */
   private List<Long> getUsedBytesOnTiers() {
-    List<Long> usedBytes = new ArrayList<Long>();
+    List<Long> usedBytes = new ArrayList<Long>(StorageLevelAlias.values().length);
     for (int i = 0; i < StorageLevelAlias.values().length; i ++) {
       usedBytes.add((long) 0);
     }

@@ -731,7 +731,7 @@ public final class MasterClient implements Closeable {
     return false;
   }
 
-  public synchronized void worker_cacheBlock(long workerId, long workerUsedBytes, long storageDirId,
+  public synchronized void worker_cacheBlock(long workerId, long usedBytesOnTier, long storageDirId,
       long blockId, long length) throws IOException, FileDoesNotExistException, BlockInfoException {
     while (!mIsShutdown) {
       connect();
