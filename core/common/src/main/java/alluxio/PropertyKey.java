@@ -169,6 +169,7 @@ public enum PropertyKey {
   WORKER_EVICTOR_CLASS(Name.WORKER_EVICTOR_CLASS, "alluxio.worker.block.evictor.LRUEvictor"),
   WORKER_EVICTOR_LRFU_ATTENUATION_FACTOR(Name.WORKER_EVICTOR_LRFU_ATTENUATION_FACTOR, 2.0),
   WORKER_EVICTOR_LRFU_STEP_FACTOR(Name.WORKER_EVICTOR_LRFU_STEP_FACTOR, 0.25),
+  WORKER_EVICTOR_LIRS_HIR_PERCENT(Name.WORKER_EVICTOR_LIRS_HIR_PERCENT, 0.25),
   WORKER_FILE_PERSIST_POOL_SIZE(Name.WORKER_FILE_PERSIST_POOL_SIZE, 64),
   WORKER_FILE_PERSIST_RATE_LIMIT(Name.WORKER_FILE_PERSIST_RATE_LIMIT, "2GB"),
   WORKER_FILE_PERSIST_RATE_LIMIT_ENABLED(Name.WORKER_FILE_PERSIST_RATE_LIMIT_ENABLED, false),
@@ -526,6 +527,8 @@ public enum PropertyKey {
         "alluxio.worker.evictor.lrfu.attenuation.factor";
     public static final String WORKER_EVICTOR_LRFU_STEP_FACTOR =
         "alluxio.worker.evictor.lrfu.step.factor";
+    public static final String WORKER_EVICTOR_LIRS_HIR_PERCENT =
+        "alluxio.worker.evictor.lirs.hir.percent";
     public static final String WORKER_FILESYSTEM_HEARTBEAT_INTERVAL_MS =
         "alluxio.worker.filesystem.heartbeat.interval.ms";
     public static final String WORKER_FILE_PERSIST_POOL_SIZE =
