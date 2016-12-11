@@ -1,6 +1,6 @@
 /*
  * The Alluxio Open Foundation licenses this work under the Apache License, version 2.0
- * (the “License”). You may not use this work except in compliance with the License, which is
+ * (the "License"). You may not use this work except in compliance with the License, which is
  * available at www.apache.org/licenses/LICENSE-2.0
  *
  * This software is distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
@@ -27,7 +27,6 @@ import alluxio.worker.block.meta.StorageTierView;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterators;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,16 +51,16 @@ import java.util.concurrent.ConcurrentHashMap;
  * blocks in HIR cache gets a low IRR, they will be moved to LIR cache. And if the LIR cache is
  * full, some blocks with relatively high IRR will be moved to HIR cache.
  *
- * LIRS can achieve better performance than LRU and LRFU in loop access pattern. For example, a
- * list of files contain blocks: a1,a2,...,ak. When iterating accessing these files, the blocks
- * will be referenced in the order: a1,a2,...,ak,a1,a2,...,ak,.... some blocks of them will be
- * stored in LIR cache and the others in HIR cache. No HIR blocks will be moved to LIR cache
- * because all blocks have equal IRR. Therefore, all blocks in LIR cache will never be removed which
- * promise the hit rate is at least (number of LIR blocks)/(number of all blocks). while if these
- * blocks cannot be held in the memory in this case, LRU will achieve zero hit rate. It's also
- * verified with Spark kmeans that the hit rate of LIRS policy improves a lot than other policies.
- * So if your workloads contain a lot of iterations like kmeans, LIRS policy is recommended for you.
- * Besides, LIRS can achieve as good performance as LRU and LRFU in most of workloads.
+ * LIRS can achieve better performance than LRU and LRFU in loop access pattern. For example, a list
+ * of files contain blocks: a1,a2,...,ak. When iterating accessing these files, the blocks will be
+ * referenced in the order: a1,a2,...,ak,a1,a2,...,ak,.... some blocks of them will be stored in LIR
+ * cache and the others in HIR cache. No HIR blocks will be moved to LIR cache because all blocks
+ * have equal IRR. Therefore, all blocks in LIR cache will never be removed which promise the hit
+ * rate is at least (number of LIR blocks)/(number of all blocks). while if these blocks cannot be
+ * held in the memory in this case, LRU will achieve zero hit rate. It's also verified with Spark
+ * kmeans that the hit rate of LIRS policy improves a lot than other policies. So if your workloads
+ * contain a lot of iterations like kmeans, LIRS policy is recommended for you. Besides, LIRS can
+ * achieve as good performance as LRU and LRFU in most of workloads.
  */
 public final class LIRSEvictor extends AbstractEvictor {
   private static final Logger LOG = LoggerFactory.getLogger(Constants.LOGGER_TYPE);
@@ -87,18 +86,16 @@ public final class LIRSEvictor extends AbstractEvictor {
   private Map<Long, Long> mBlockIdToSize = new ConcurrentHashMap<Long, Long>();
   /**
    * Records the information of all LIR blocks. Pair<BlockStoreLocation, Long> identifies a block
-   * because one block may contain more than one ghost copies on all tiers. One ghost block is
-   * used to mark the block removed from some tier but it may be referenced again in the future.
+   * because one block may contain more than one ghost copies on all tiers. One ghost block is used
+   * to mark the block removed from some tier but it may be referenced again in the future.
    */
-  private Map<Pair<BlockStoreLocation, Long>, BlockType> mLIRCache =
-      Collections.synchronizedMap(new LinkedHashMap<Pair<BlockStoreLocation, Long>, BlockType>(
-          LINKED_HASH_MAP_INIT_CAPACITY, LINKED_HASH_MAP_INIT_LOAD_FACTOR,
-          LINKED_HASH_MAP_ACCESS_ORDERED));
+  private Map<Pair<BlockStoreLocation, Long>, BlockType> mLIRCache = Collections.synchronizedMap(
+      new LinkedHashMap<Pair<BlockStoreLocation, Long>, BlockType>(LINKED_HASH_MAP_INIT_CAPACITY,
+          LINKED_HASH_MAP_INIT_LOAD_FACTOR, LINKED_HASH_MAP_ACCESS_ORDERED));
   // Record the information of all HIR blocks.
-  private Map<Pair<BlockStoreLocation, Long>, BlockType> mHIRCache =
-      Collections.synchronizedMap(new LinkedHashMap<Pair<BlockStoreLocation, Long>, BlockType>(
-          LINKED_HASH_MAP_INIT_CAPACITY, LINKED_HASH_MAP_INIT_LOAD_FACTOR,
-          LINKED_HASH_MAP_ACCESS_ORDERED));
+  private Map<Pair<BlockStoreLocation, Long>, BlockType> mHIRCache = Collections.synchronizedMap(
+      new LinkedHashMap<Pair<BlockStoreLocation, Long>, BlockType>(LINKED_HASH_MAP_INIT_CAPACITY,
+          LINKED_HASH_MAP_INIT_LOAD_FACTOR, LINKED_HASH_MAP_ACCESS_ORDERED));
 
   /**
    * Creates a new instance of {@link LIRSEvictor}.
@@ -146,8 +143,8 @@ public final class LIRSEvictor extends AbstractEvictor {
 
   /**
    * Generates the iterator of blocks for eviction. HIR blocks will be evicted first, so first
-   * generate the iterator of HIR blocks. Then generate the iterator of LIR blocks because
-   * LIR blocks need to be evicted at last.
+   * generate the iterator of HIR blocks. Then generate the iterator of LIR blocks because LIR
+   * blocks need to be evicted at last.
    *
    * @return the merged iterator of HIR blocks and LIR blocks
    */
@@ -192,13 +189,13 @@ public final class LIRSEvictor extends AbstractEvictor {
 
   @Override
   public void onMoveBlockByClient(long sessionId, long blockId, BlockStoreLocation oldLocation,
-                                  BlockStoreLocation newLocation) {
+      BlockStoreLocation newLocation) {
     updateOnMove(blockId, oldLocation, newLocation);
   }
 
   @Override
   public void onMoveBlockByWorker(long sessionId, long blockId, BlockStoreLocation oldLocation,
-                                  BlockStoreLocation newLocation) {
+      BlockStoreLocation newLocation) {
     updateOnMove(blockId, oldLocation, newLocation);
   }
 
@@ -237,8 +234,8 @@ public final class LIRSEvictor extends AbstractEvictor {
         long blockSize = mBlockIdToSize.get(blockId);
         if (mHIRCache.containsKey(key)) {
           if (mHIRCache.get(key).isMoved()) {
-            if (mLIRCache.containsKey(key) || spaceContainer.getLIRBytes() + blockSize
-                <= (dir.getAvailableBytes() + dir.getEvitableBytes()) * mLIRPercent) {
+            if (mLIRCache.containsKey(key) || spaceContainer.getLIRBytes()
+                + blockSize <= (dir.getAvailableBytes() + dir.getEvitableBytes()) * mLIRPercent) {
               spaceContainer.moveBlockFromHIRToLIR(blockSize);
               mLIRCache.remove(key);
               mHIRCache.remove(key);
@@ -287,8 +284,8 @@ public final class LIRSEvictor extends AbstractEvictor {
           }
           long blockSize = blockMeta.getBlockSize();
           mBlockIdToSize.put(blockId, blockSize);
-          if (spaceContainer.getLIRBytes() + blockSize <= (dir.getAvailableBytes()
-              + dir.getEvitableBytes()) * mLIRPercent) {
+          if (spaceContainer.getLIRBytes()
+              + blockSize <= (dir.getAvailableBytes() + dir.getEvitableBytes()) * mLIRPercent) {
             // Moves the block to LIR cache if LIR cache is not full
             spaceContainer.incrementLIR(blockSize);
             mLIRCache.put(key, BlockType.LIR);
@@ -306,7 +303,7 @@ public final class LIRSEvictor extends AbstractEvictor {
   }
 
   private void updateOnMove(long blockId, BlockStoreLocation oldLocation,
-                            BlockStoreLocation newLocation) {
+      BlockStoreLocation newLocation) {
     // Checks if the newLocation belongs to the oldLocation. If so, don't need to move
     if (newLocation.belongsTo(oldLocation)) {
       return;

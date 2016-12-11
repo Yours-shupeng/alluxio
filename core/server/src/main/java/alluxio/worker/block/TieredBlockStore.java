@@ -27,7 +27,7 @@ import alluxio.util.io.FileUtils;
 import alluxio.worker.block.allocator.Allocator;
 import alluxio.worker.block.evictor.BlockTransferInfo;
 import alluxio.worker.block.evictor.EvictionPlan;
-import alluxio.worker.block.evictor.Evictor;
+import alluxio.worker.block.evictor.EvictorManager;
 import alluxio.worker.block.io.BlockReader;
 import alluxio.worker.block.io.BlockWriter;
 import alluxio.worker.block.io.LocalFileBlockReader;
@@ -88,7 +88,7 @@ public final class TieredBlockStore implements BlockStore {
   private final BlockMetadataManager mMetaManager;
   private final BlockLockManager mLockManager;
   private final Allocator mAllocator;
-  private final Evictor mEvictor;
+  private final EvictorManager mEvictorManager;
 
   private final List<BlockStoreEventListener> mBlockStoreEventListeners = new ArrayList<>();
 
@@ -123,10 +123,8 @@ public final class TieredBlockStore implements BlockStore {
 
     initManagerView = new BlockMetadataManagerView(mMetaManager, Collections.<Long>emptySet(),
         Collections.<Long>emptySet());
-    mEvictor = Evictor.Factory.create(initManagerView, mAllocator);
-    if (mEvictor instanceof BlockStoreEventListener) {
-      registerBlockStoreEventListener((BlockStoreEventListener) mEvictor);
-    }
+    mEvictorManager = new EvictorManager(initManagerView, mAllocator);
+    registerBlockStoreEventListener((BlockStoreEventListener) mEvictorManager);
 
     mStorageTierAssoc = new WorkerStorageTierAssoc();
   }
@@ -589,7 +587,7 @@ public final class TieredBlockStore implements BlockStore {
       throws WorkerOutOfSpaceException, IOException {
     EvictionPlan plan;
     try (LockResource r = new LockResource(mMetadataReadLock)) {
-      plan = mEvictor.freeSpaceWithView(availableBytes, location, getUpdatedView());
+      plan = mEvictorManager.freeSpaceWithView(availableBytes, location, getUpdatedView());
       // Absent plan means failed to evict enough space.
       if (plan == null) {
         throw new WorkerOutOfSpaceException(ExceptionMessage.NO_EVICTION_PLAN_TO_FREE_SPACE);

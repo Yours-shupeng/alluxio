@@ -1,6 +1,6 @@
 /*
  * The Alluxio Open Foundation licenses this work under the Apache License, version 2.0
- * (the “License”). You may not use this work except in compliance with the License, which is
+ * (the "License"). You may not use this work except in compliance with the License, which is
  * available at www.apache.org/licenses/LICENSE-2.0
  *
  * This software is distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
@@ -10,16 +10,6 @@
  */
 
 package alluxio.worker.block.evictor;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 import alluxio.Constants;
 import alluxio.Sessions;
@@ -31,9 +21,23 @@ import alluxio.worker.block.allocator.Allocator;
 import alluxio.worker.block.meta.BlockMeta;
 import alluxio.worker.block.meta.StorageDirView;
 import alluxio.worker.block.meta.StorageTierView;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Implementation of an evictor which combines the feature of LRU and LFU.
+ */
 public class ARCEvictor extends AbstractEvictor {
   private static final Logger LOG = LoggerFactory.getLogger(Constants.LOGGER_TYPE);
 
@@ -53,7 +57,7 @@ public class ARCEvictor extends AbstractEvictor {
   private Map<BlockStoreLocation, Map<Long, Boolean>> mLRUB2 = new ConcurrentHashMap<>();
 
   // store blocks moved from other tiers before accessing
-  // TODO when the temp blocks should be evicted
+  // TODO(shupeng) when the temp blocks should be evicted
   // moved blocks have two kinds: from upper to lower and from lower to upper
   // the first is evict operation and the second is promote
   private Map<BlockStoreLocation, Set<Long>> mTmpMovedBlocks = new ConcurrentHashMap<>();
@@ -84,26 +88,23 @@ public class ARCEvictor extends AbstractEvictor {
         String tierAlias = tier.getTierViewAlias();
         int tierLevel = tier.getTierViewOrdinal();
         int dirIndex = dir.getDirViewIndex();
-        BlockStoreLocation location = new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
+        BlockStoreLocation location =
+            new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
         long totalBytes = dir.getAvailableBytes() + dir.getEvitableBytes();
         long t1Bytes = 0;
         Map<Long, Integer> blockAccessTimes = new ConcurrentHashMap<>();
-        Map<Long, Boolean> t1 =
-            Collections.synchronizedMap(new LinkedHashMap<Long, Boolean>(
-                LINKED_HASH_MAP_INIT_CAPACITY, LINKED_HASH_MAP_INIT_LOAD_FACTOR,
-                LINKED_HASH_MAP_ACCESS_ORDERED));
-        Map<Long, Boolean> b1 =
-            Collections.synchronizedMap(new LinkedHashMap<Long, Boolean>(
-                LINKED_HASH_MAP_INIT_CAPACITY, LINKED_HASH_MAP_INIT_LOAD_FACTOR,
-                LINKED_HASH_MAP_ACCESS_ORDERED));
-        Map<Long, Boolean> t2 =
-            Collections.synchronizedMap(new LinkedHashMap<Long, Boolean>(
-                LINKED_HASH_MAP_INIT_CAPACITY, LINKED_HASH_MAP_INIT_LOAD_FACTOR,
-                LINKED_HASH_MAP_ACCESS_ORDERED));
-        Map<Long, Boolean> b2 =
-            Collections.synchronizedMap(new LinkedHashMap<Long, Boolean>(
-                LINKED_HASH_MAP_INIT_CAPACITY, LINKED_HASH_MAP_INIT_LOAD_FACTOR,
-                LINKED_HASH_MAP_ACCESS_ORDERED));
+        Map<Long, Boolean> t1 = Collections
+            .synchronizedMap(new LinkedHashMap<Long, Boolean>(LINKED_HASH_MAP_INIT_CAPACITY,
+                LINKED_HASH_MAP_INIT_LOAD_FACTOR, LINKED_HASH_MAP_ACCESS_ORDERED));
+        Map<Long, Boolean> b1 = Collections
+            .synchronizedMap(new LinkedHashMap<Long, Boolean>(LINKED_HASH_MAP_INIT_CAPACITY,
+                LINKED_HASH_MAP_INIT_LOAD_FACTOR, LINKED_HASH_MAP_ACCESS_ORDERED));
+        Map<Long, Boolean> t2 = Collections
+            .synchronizedMap(new LinkedHashMap<Long, Boolean>(LINKED_HASH_MAP_INIT_CAPACITY,
+                LINKED_HASH_MAP_INIT_LOAD_FACTOR, LINKED_HASH_MAP_ACCESS_ORDERED));
+        Map<Long, Boolean> b2 = Collections
+            .synchronizedMap(new LinkedHashMap<Long, Boolean>(LINKED_HASH_MAP_INIT_CAPACITY,
+                LINKED_HASH_MAP_INIT_LOAD_FACTOR, LINKED_HASH_MAP_ACCESS_ORDERED));
         Set<Long> tmpBlocks = new HashSet<>();
         for (BlockMeta blockMeta : dir.getEvictableBlocks()) { // all blocks with initial view
           long blockId = blockMeta.getBlockId();
@@ -130,7 +131,7 @@ public class ARCEvictor extends AbstractEvictor {
 
   @Override
   protected StorageDirView cascadingEvict(long bytesToBeAvailable, BlockStoreLocation location,
-                                          EvictionPlan plan) {
+      EvictionPlan plan) {
     StorageDirView candidateDirView =
         EvictorUtils.getDirWithMaxFreeSpace(bytesToBeAvailable, location, mManagerView);
     if (candidateDirView != null) {
@@ -164,10 +165,7 @@ public class ARCEvictor extends AbstractEvictor {
           BlockMeta block = mManagerView.getBlockMeta(blockId);
           if (block != null) {
             candidateDirView.markBlockMoveOut(blockId, block.getBlockSize());
-            plan.toEvict()
-                .add(
-                    new Pair<>(blockId, candidateDirView
-                        .toBlockStoreLocation()));
+            plan.toEvict().add(new Pair<>(blockId, candidateDirView.toBlockStoreLocation()));
           }
         } catch (BlockDoesNotExistException nfe) {
           continue;
@@ -180,26 +178,22 @@ public class ARCEvictor extends AbstractEvictor {
           if (block == null) {
             continue;
           }
-          StorageDirView nextDirView =
-              mAllocator.allocateBlockWithView(Sessions.MIGRATE_DATA_SESSION_ID,
-                  block.getBlockSize(),
-                  BlockStoreLocation.anyDirInTier(nextTierView.getTierViewAlias()), mManagerView);
+          StorageDirView nextDirView = mAllocator.allocateBlockWithView(
+              Sessions.MIGRATE_DATA_SESSION_ID, block.getBlockSize(),
+              BlockStoreLocation.anyDirInTier(nextTierView.getTierViewAlias()), mManagerView);
           if (nextDirView == null) {
-            nextDirView =
-                cascadingEvict(block.getBlockSize(),
-                    BlockStoreLocation.anyDirInTier(nextTierView.getTierViewAlias()), plan);
+            nextDirView = cascadingEvict(block.getBlockSize(),
+                BlockStoreLocation.anyDirInTier(nextTierView.getTierViewAlias()), plan);
           }
           if (nextDirView == null) {
             // If we failed to find a dir in the next tier to move this block, evict it and
             // continue. Normally this should not happen.
-            plan.toEvict().add(
-                new Pair<>(blockId, block.getBlockLocation()));
+            plan.toEvict().add(new Pair<>(blockId, block.getBlockLocation()));
             candidateDirView.markBlockMoveOut(blockId, block.getBlockSize());
             continue;
           }
-          plan.toMove().add(
-              new BlockTransferInfo(blockId, block.getBlockLocation(), nextDirView
-                  .toBlockStoreLocation()));
+          plan.toMove().add(new BlockTransferInfo(blockId, block.getBlockLocation(),
+              nextDirView.toBlockStoreLocation()));
           candidateDirView.markBlockMoveOut(blockId, block.getBlockSize());
           nextDirView.markBlockMoveIn(blockId, block.getBlockSize());
         } catch (BlockDoesNotExistException nfe) {
@@ -212,9 +206,10 @@ public class ARCEvictor extends AbstractEvictor {
   }
 
   private void iterateForCandidates(StorageDirView dir, EvictionDirCandidates dirCandidates,
-                                    long bytesToBeAvailable) {
+      long bytesToBeAvailable) {
     StorageTierView tier = dir.getParentTierView();
-    BlockStoreLocation location = new BlockStoreLocation(dir.getParentTierView().getTierViewAlias(), dir.getDirViewIndex());
+    BlockStoreLocation location =
+        new BlockStoreLocation(dir.getParentTierView().getTierViewAlias(), dir.getDirViewIndex());
     long t1LimitBytes = mT1LimitBytes.get(location);
     long totalBytes = mTotalBytes.get(location);
     long t1Bytes = mLRUT1Bytes.get(location);
@@ -259,7 +254,8 @@ public class ARCEvictor extends AbstractEvictor {
   protected void onRemoveBlockFromIterator(long blockId) {
     for (StorageTierView tier : mManagerView.getTierViews()) {
       for (StorageDirView dir : tier.getDirViews()) {
-       BlockStoreLocation location = new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
+        BlockStoreLocation location =
+            new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
         Map<Long, Boolean> t1 = mLRUT1.get(location);
         Map<Long, Boolean> t2 = mLRUT2.get(location);
         if (t1.containsKey(blockId)) {
@@ -290,14 +286,14 @@ public class ARCEvictor extends AbstractEvictor {
     try {
       updateOnCommit(blockId, location);
     } catch (BlockDoesNotExistException e) {
-      // TODO Auto-generated catch block
+      // TODO(shupeng) Auto-generated catch block
       e.printStackTrace();
     }
   }
 
   @Override
   public void onMoveBlockByClient(long sessionId, long blockId, BlockStoreLocation oldLocation,
-                                  BlockStoreLocation newLocation) {
+      BlockStoreLocation newLocation) {
     System.out.println("move block " + blockId + " from tier " + oldLocation.tierAlias()
         + " to tier " + newLocation.tierAlias());
     updateOnMove(blockId, oldLocation, newLocation);
@@ -305,7 +301,7 @@ public class ARCEvictor extends AbstractEvictor {
 
   @Override
   public void onMoveBlockByWorker(long sessionId, long blockId, BlockStoreLocation oldLocation,
-                                  BlockStoreLocation newLocation) {
+      BlockStoreLocation newLocation) {
     System.out.println("move block " + blockId + " from tier " + oldLocation.tierAlias()
         + " to tier " + newLocation.tierAlias());
     updateOnMove(blockId, oldLocation, newLocation);
@@ -326,7 +322,8 @@ public class ARCEvictor extends AbstractEvictor {
   private void updateTail() {
     for (StorageTierView tier : mManagerView.getTierViews()) {
       for (StorageDirView dir : tier.getDirViews()) {
-        BlockStoreLocation location = new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
+        BlockStoreLocation location =
+            new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
         long t1Bytes = mLRUT1Bytes.get(location);
         long t2Bytes = mLRUT2Bytes.get(location);
         long b1Bytes = mLRUB1Bytes.get(location);
@@ -357,7 +354,8 @@ public class ARCEvictor extends AbstractEvictor {
   private void updateOnAccess(long blockId) {
     for (StorageTierView tier : mManagerView.getTierViews()) {
       for (StorageDirView dir : tier.getDirViews()) {
-        BlockStoreLocation location = new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
+        BlockStoreLocation location =
+            new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
         long t1Bytes = mLRUT1Bytes.get(location);
         long t2Bytes = mLRUT2Bytes.get(location);
         long b1Bytes = mLRUB1Bytes.get(location);
@@ -381,16 +379,15 @@ public class ARCEvictor extends AbstractEvictor {
         } else if (tmpBlocks.contains(blockId)) {
           tmpBlocks.remove(blockId);
           if (b1.containsKey(blockId)) {
-            adjustSize = (long)Math.max(1.0 * b2Bytes / b1Bytes, 1.0) * blocksize;
+            adjustSize = (long) Math.max(1.0 * b2Bytes / b1Bytes, 1.0) * blocksize;
             b1Bytes -= blocksize;
             t2Bytes += blocksize;
             t2.put(blockId, UNUSED_MAP_VALUE);
-            t1LimitBytes =
-                Math.min(t1LimitBytes + adjustSize, totalBytes
-                    - (long) (totalBytes * mLeastLFUPercent));
+            t1LimitBytes = Math.min(t1LimitBytes + adjustSize,
+                totalBytes - (long) (totalBytes * mLeastLFUPercent));
             b1.remove(blockId);
           } else if (b2.containsKey(blockId)) {
-            adjustSize = (long)Math.max(1.0 * b1Bytes / b2Bytes, 1.0) * blocksize;
+            adjustSize = (long) Math.max(1.0 * b1Bytes / b2Bytes, 1.0) * blocksize;
             b2Bytes -= blocksize;
             t2Bytes += blocksize;
             b2.remove(blockId);
@@ -417,7 +414,8 @@ public class ARCEvictor extends AbstractEvictor {
       throws BlockDoesNotExistException {
     for (StorageTierView tier : mManagerView.getTierViews()) {
       for (StorageDirView dir : tier.getDirViews()) {
-        BlockStoreLocation newLocation = new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
+        BlockStoreLocation newLocation =
+            new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
         if (newLocation.belongsTo(location)) {
           long t1Bytes = mLRUT1Bytes.get(newLocation);
           long b1Bytes = mLRUB1Bytes.get(newLocation);
@@ -435,14 +433,15 @@ public class ARCEvictor extends AbstractEvictor {
   }
 
   private void updateOnMove(long blockId, BlockStoreLocation oldLocation,
-                            BlockStoreLocation newLocation) {
+      BlockStoreLocation newLocation) {
     if (newLocation.belongsTo(oldLocation)) {
       return;
     }
 
     for (StorageTierView tier : mManagerView.getTierViews()) {
       for (StorageDirView dir : tier.getDirViews()) {
-        BlockStoreLocation location = new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
+        BlockStoreLocation location =
+            new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
         long t1Bytes = mLRUT1Bytes.get(location);
         long t2Bytes = mLRUT2Bytes.get(location);
         long b1Bytes = mLRUB1Bytes.get(location);
@@ -489,7 +488,8 @@ public class ARCEvictor extends AbstractEvictor {
         if (!mBlockSize.containsKey(blockId)) {
           continue;
         }
-        BlockStoreLocation location = new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
+        BlockStoreLocation location =
+            new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
         long t1Bytes = mLRUT1Bytes.get(location);
         long t2Bytes = mLRUT2Bytes.get(location);
         long b1Bytes = mLRUB1Bytes.get(location);
@@ -527,7 +527,7 @@ public class ARCEvictor extends AbstractEvictor {
 
   @Override
   protected BlockStoreLocation updateBlockStoreLocation(long bytesToBeAvailable,
-                                                        BlockStoreLocation location) {
+      BlockStoreLocation location) {
     StorageDirView candidateDirView =
         EvictorUtils.getDirWithMaxFreeSpace(bytesToBeAvailable, location, mManagerView);
     if (candidateDirView != null) {

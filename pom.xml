@@ -604,7 +604,7 @@
         </executions>
       </plugin>
 
-      <plugin>
+      <!--plugin>
         <artifactId>exec-maven-plugin</artifactId>
         <groupId>org.codehaus.mojo</groupId>
         <version>1.4.0</version>
@@ -621,7 +621,7 @@
             </configuration>
           </execution>
         </executions>
-      </plugin>
+      </plugin-->
     </plugins>
   </build>
 
