@@ -98,7 +98,7 @@ public class EvictorManager implements BlockStoreEventListener {
 
   private static final int LINKED_HASH_MAP_INIT_CAPACITY = 200;
   private static final float LINKED_HASH_MAP_INIT_LOAD_FACTOR = 0.75f;
-  private static final boolean LINKED_HASH_MAP_ACCESS_ORDERED = true;
+  private static final boolean LINKED_HASH_MAP_ACCESS_ORDERED = false;
 
   private final BlockMetadataManagerView mInitManagerView;
   private final Allocator mAllocator;
@@ -221,6 +221,8 @@ public class EvictorManager implements BlockStoreEventListener {
           mHighReuseDistanceHitBlocks++;
         }
       }
+      mBlocksOrder.remove(blockId);
+      mBlocksOrder.put(blockId, oldLocation);
     } catch (BlockDoesNotExistException be) {
       be.printStackTrace();
     }
@@ -238,6 +240,7 @@ public class EvictorManager implements BlockStoreEventListener {
    * @param blockId the id of the block where the mutation to abort
    */
   public void onAbortBlock(long sessionId, long blockId) {
+    mBlocksOrder.remove(blockId);
     for (Evictor evictor : mCandidateEvictors) {
       if (evictor instanceof BlockStoreEventListener) {
         ((BlockStoreEventListener) evictor).onAbortBlock(sessionId, blockId);
@@ -253,6 +256,7 @@ public class EvictorManager implements BlockStoreEventListener {
    * @param location the location of the block to be committed
    */
   public void onCommitBlock(long sessionId, long blockId, BlockStoreLocation location) {
+    mBlocksOrder.put(blockId, location);
     for (Evictor evictor : mCandidateEvictors) {
       if (evictor instanceof BlockStoreEventListener) {
         ((BlockStoreEventListener) evictor).onCommitBlock(sessionId, blockId, location);
@@ -270,6 +274,7 @@ public class EvictorManager implements BlockStoreEventListener {
    */
   public void onMoveBlockByClient(long sessionId, long blockId, BlockStoreLocation oldLocation,
       BlockStoreLocation newLocation) {
+    mBlocksOrder.put(blockId, newLocation);
     for (Evictor evictor : mCandidateEvictors) {
       if (evictor instanceof BlockStoreEventListener) {
         ((BlockStoreEventListener) evictor).onMoveBlockByClient(sessionId, blockId, oldLocation,
@@ -288,6 +293,7 @@ public class EvictorManager implements BlockStoreEventListener {
    */
   public void onMoveBlockByWorker(long sessionId, long blockId, BlockStoreLocation oldLocation,
       BlockStoreLocation newLocation) {
+    mBlocksOrder.put(blockId, newLocation);
     for (Evictor evictor : mCandidateEvictors) {
       if (evictor instanceof BlockStoreEventListener) {
         ((BlockStoreEventListener) evictor).onMoveBlockByWorker(sessionId, blockId, oldLocation,
@@ -303,6 +309,7 @@ public class EvictorManager implements BlockStoreEventListener {
    * @param blockId the id of the block to be removed
    */
   public void onRemoveBlockByClient(long sessionId, long blockId) {
+    mBlocksOrder.remove(blockId);
     for (Evictor evictor : mCandidateEvictors) {
       if (evictor instanceof BlockStoreEventListener) {
         ((BlockStoreEventListener) evictor).onRemoveBlockByClient(sessionId, blockId);
@@ -317,6 +324,7 @@ public class EvictorManager implements BlockStoreEventListener {
    * @param blockId the id of the block to be removed
    */
   public void onRemoveBlockByWorker(long sessionId, long blockId) {
+    mBlocksOrder.remove(blockId);
     for (Evictor evictor : mCandidateEvictors) {
       if (evictor instanceof BlockStoreEventListener) {
         ((BlockStoreEventListener) evictor).onRemoveBlockByWorker(sessionId, blockId);
