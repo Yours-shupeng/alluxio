@@ -131,11 +131,12 @@ public class EvictorManager implements BlockStoreEventListener {
   public EvictorManager(BlockMetadataManagerView initManagerView, Allocator allocator) {
     mInitManagerView = initManagerView;
     mAllocator = allocator;
-    mEvictor = Evictor.Factory.create(initManagerView, allocator);
+    //mEvictor = Evictor.Factory.create(initManagerView, allocator);
     mCandidateEvictors.add(new LRUEvictor(mInitManagerView, mAllocator));
     // mCandidateEvictors.add(new LRFUEvictor(mInitManagerView, mAllocator));
     mCandidateEvictors.add(new LIRSEvictor(mInitManagerView, mAllocator));
     mCandidateEvictors.add(new ARCEvictor(mInitManagerView, mAllocator));
+    mEvictor = mCandidateEvictors.get(0);
     initBlockMetadata();
     mEvictorCheck.submit(new AccessCheck());
   }
