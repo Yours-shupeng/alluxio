@@ -27,7 +27,7 @@ import alluxio.util.io.FileUtils;
 import alluxio.worker.block.allocator.Allocator;
 import alluxio.worker.block.evictor.BlockTransferInfo;
 import alluxio.worker.block.evictor.EvictionPlan;
-import alluxio.worker.block.evictor.EvictorManager;
+import alluxio.worker.block.evictor.EvictorDispatcher;
 import alluxio.worker.block.io.BlockReader;
 import alluxio.worker.block.io.BlockWriter;
 import alluxio.worker.block.io.LocalFileBlockReader;
@@ -83,12 +83,12 @@ import javax.annotation.concurrent.NotThreadSafe;
 public final class TieredBlockStore implements BlockStore {
   private static final Logger LOG = LoggerFactory.getLogger(Constants.LOGGER_TYPE);
   private static final int MAX_RETRIES =
-          Configuration.getInt(PropertyKey.WORKER_TIERED_STORE_RETRY);
+      Configuration.getInt(PropertyKey.WORKER_TIERED_STORE_RETRY);
 
   private final BlockMetadataManager mMetaManager;
   private final BlockLockManager mLockManager;
   private final Allocator mAllocator;
-  private final EvictorManager mEvictorManager;
+  private final EvictorDispatcher mEvictorDispatcher;
 
   private final List<BlockStoreEventListener> mBlockStoreEventListeners = new ArrayList<>();
 
@@ -123,8 +123,9 @@ public final class TieredBlockStore implements BlockStore {
 
     initManagerView = new BlockMetadataManagerView(mMetaManager, Collections.<Long>emptySet(),
         Collections.<Long>emptySet());
-    mEvictorManager = new EvictorManager(initManagerView, mAllocator);
-    registerBlockStoreEventListener((BlockStoreEventListener) mEvictorManager);
+    mEvictorDispatcher = new EvictorDispatcher(initManagerView, mAllocator);
+    mEvictorDispatcher.start();
+    registerBlockStoreEventListener((BlockStoreEventListener) mEvictorDispatcher);
 
     mStorageTierAssoc = new WorkerStorageTierAssoc();
   }
@@ -179,7 +180,7 @@ public final class TieredBlockStore implements BlockStore {
   @Override
   public TempBlockMeta createBlockMeta(long sessionId, long blockId, BlockStoreLocation location,
       long initialBlockSize)
-          throws BlockAlreadyExistsException, WorkerOutOfSpaceException, IOException {
+      throws BlockAlreadyExistsException, WorkerOutOfSpaceException, IOException {
     for (int i = 0; i < MAX_RETRIES + 1; i++) {
       TempBlockMeta tempBlockMeta =
           createBlockMetaInternal(sessionId, blockId, location, initialBlockSize, true);
@@ -265,8 +266,8 @@ public final class TieredBlockStore implements BlockStore {
   @Override
   public void moveBlock(long sessionId, long blockId, BlockStoreLocation oldLocation,
       BlockStoreLocation newLocation)
-          throws BlockDoesNotExistException, BlockAlreadyExistsException,
-          InvalidWorkerStateException, WorkerOutOfSpaceException, IOException {
+      throws BlockDoesNotExistException, BlockAlreadyExistsException, InvalidWorkerStateException,
+      WorkerOutOfSpaceException, IOException {
     for (int i = 0; i < MAX_RETRIES + 1; i++) {
       MoveBlockResult moveResult = moveBlockInternal(sessionId, blockId, oldLocation, newLocation);
       if (moveResult.getSuccess()) {
@@ -513,7 +514,7 @@ public final class TieredBlockStore implements BlockStore {
    */
   private TempBlockMeta createBlockMetaInternal(long sessionId, long blockId,
       BlockStoreLocation location, long initialBlockSize, boolean newBlock)
-          throws BlockAlreadyExistsException {
+      throws BlockAlreadyExistsException {
     // NOTE: a temp block is supposed to be visible for its own writer, unnecessary to acquire
     // block lock here since no sharing
     try (LockResource r = new LockResource(mMetadataWriteLock)) {
@@ -587,7 +588,8 @@ public final class TieredBlockStore implements BlockStore {
       throws WorkerOutOfSpaceException, IOException {
     EvictionPlan plan;
     try (LockResource r = new LockResource(mMetadataReadLock)) {
-      plan = mEvictorManager.freeSpaceWithView(availableBytes, location, getUpdatedView());
+      plan = mEvictorDispatcher.freeSpaceWithView(sessionId, availableBytes, location,
+          getUpdatedView());
       // Absent plan means failed to evict enough space.
       if (plan == null) {
         throw new WorkerOutOfSpaceException(ExceptionMessage.NO_EVICTION_PLAN_TO_FREE_SPACE);
@@ -688,8 +690,8 @@ public final class TieredBlockStore implements BlockStore {
    */
   private MoveBlockResult moveBlockInternal(long sessionId, long blockId,
       BlockStoreLocation oldLocation, BlockStoreLocation newLocation)
-          throws BlockDoesNotExistException, BlockAlreadyExistsException,
-          InvalidWorkerStateException, IOException {
+      throws BlockDoesNotExistException, BlockAlreadyExistsException, InvalidWorkerStateException,
+      IOException {
     long lockId = mLockManager.lockBlock(sessionId, blockId, BlockLockType.WRITE);
     try {
       long blockSize;

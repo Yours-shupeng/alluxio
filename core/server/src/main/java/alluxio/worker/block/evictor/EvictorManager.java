@@ -52,7 +52,7 @@ public class EvictorManager implements BlockStoreEventListener {
       double lirsLowHitRate = 0;
       while (true) {
         try {
-          Thread.sleep(3000);
+          Thread.sleep(60000);
         } catch (InterruptedException ie) {
           ie.printStackTrace();
         }
