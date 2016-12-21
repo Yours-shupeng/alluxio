@@ -67,7 +67,7 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
       } catch (InterruptedException e) {
         LOG.error("Failed to sleep seconds because {}", e);
       }
-      if (mAccessTimes < 20) {
+      if (mAccessTimes < 120) {
         continue;
       }
       long minLost = Long.MAX_VALUE;
