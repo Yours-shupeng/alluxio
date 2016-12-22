@@ -11,6 +11,8 @@
 
 package alluxio.worker.block.evictor;
 
+import java.io.IOException;
+
 /**
  * Common type of evictors.
  */
@@ -46,5 +48,27 @@ public enum EvictorType {
    */
   public int getValue() {
     return mValue;
+  }
+
+  /**
+   * Get EvictorType of value.
+   *
+   * @param value int value
+   * @return EvictorType corresponding to the value
+   * @throws IOException if no EvictorType has the value
+   */
+  public static EvictorType getEvictorType(int value) throws IOException {
+    switch (value) {
+      case 1:
+        return EvictorType.LRU;
+      case 2:
+        return EvictorType.LRFU;
+      case 3:
+        return EvictorType.LIRS;
+      case 4:
+        return EvictorType.ARC;
+      default:
+        return null;
+    }
   }
 }

@@ -167,6 +167,8 @@ public enum PropertyKey {
   WORKER_DATA_TMP_FOLDER(Name.WORKER_DATA_TMP_FOLDER, ".tmp_blocks"),
   WORKER_DATA_TMP_SUBDIR_MAX(Name.WORKER_DATA_TMP_SUBDIR_MAX, 1024),
   WORKER_EVICTOR_CLASS(Name.WORKER_EVICTOR_CLASS, "alluxio.worker.block.evictor.LRUEvictor"),
+  WORKER_EVICTOR_TYPE(Name.WORKER_EVICTOR_TYPE, 1),
+  WORKER_EVICTOR_AUTO_ENABLED(Name.WORKER_EVICTOR_AUTO_ENABLED, false),
   WORKER_EVICTOR_LRFU_ATTENUATION_FACTOR(Name.WORKER_EVICTOR_LRFU_ATTENUATION_FACTOR, 2.0),
   WORKER_EVICTOR_LRFU_STEP_FACTOR(Name.WORKER_EVICTOR_LRFU_STEP_FACTOR, 0.25),
   WORKER_EVICTOR_LIRS_HIR_PERCENT(Name.WORKER_EVICTOR_LIRS_HIR_PERCENT, 0.25),
@@ -523,6 +525,8 @@ public enum PropertyKey {
     public static final String WORKER_DATA_TMP_FOLDER = "alluxio.worker.data.folder.tmp";
     public static final String WORKER_DATA_TMP_SUBDIR_MAX = "alluxio.worker.data.tmp.subdir.max";
     public static final String WORKER_EVICTOR_CLASS = "alluxio.worker.evictor.class";
+    public static final String WORKER_EVICTOR_TYPE = "alluxio.worker.evictor.type";
+    public static final String WORKER_EVICTOR_AUTO_ENABLED = "alluxio.worker.evictor.auto.enabled";
     public static final String WORKER_EVICTOR_LRFU_ATTENUATION_FACTOR =
         "alluxio.worker.evictor.lrfu.attenuation.factor";
     public static final String WORKER_EVICTOR_LRFU_STEP_FACTOR =

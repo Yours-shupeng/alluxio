@@ -11,16 +11,21 @@
 
 package alluxio.worker.block.evictor;
 
+import alluxio.Configuration;
 import alluxio.Constants;
+import alluxio.PropertyKey;
 import alluxio.collections.Pair;
 import alluxio.exception.BlockDoesNotExistException;
 import alluxio.exception.ExceptionMessage;
 import alluxio.exception.WorkerOutOfSpaceException;
+import alluxio.util.CommonUtils;
 import alluxio.worker.block.BlockMetadataManagerView;
 import alluxio.worker.block.BlockStoreEventListener;
 import alluxio.worker.block.BlockStoreLocation;
 import alluxio.worker.block.allocator.Allocator;
+import alluxio.worker.block.meta.StorageDirView;
 
+import com.google.common.base.Throwables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,7 +44,8 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
   private Evictor mCurrentEvictor;
   private EvictorType mCurrentEvictorType;
 
-  private long mAccessTimes = 0;
+  private long mMemBytes = 0;
+  private long mAccessedBytes = 0;
 
   private BlockMetadataManagerView mBlockMetadataManagerView;
   private Allocator mAllocator;
@@ -54,6 +60,9 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
     mBlockMetadataManagerView = blockMetadataManagerView;
     mAllocator = allocator;
     initEvictors();
+    for (StorageDirView dir : mBlockMetadataManagerView.getTierView("MEM").getDirViews()) {
+      mMemBytes += dir.getAvailableBytes() + dir.getEvitableBytes();
+    }
   }
 
   /**
@@ -64,10 +73,13 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
     while (true) {
       try {
         Thread.sleep(60000);
+        if (!Configuration.getBoolean(PropertyKey.WORKER_EVICTOR_AUTO_ENABLED)) {
+          continue;
+        }
       } catch (InterruptedException e) {
         LOG.error("Failed to sleep seconds because {}", e);
       }
-      if (mAccessTimes < 120) {
+      if (mAccessedBytes < 2 * mMemBytes) {
         continue;
       }
       long minLost = Long.MAX_VALUE;
@@ -110,7 +122,7 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
         mCurrentEvictorType = candidateEvictorType;
         mCurrentEvictor = mEvictors.get(mCurrentEvictorType);
       }
-      mAccessTimes = 0;
+      mAccessedBytes = 0L;
     }
   }
 
@@ -127,37 +139,40 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
    */
   public EvictionPlan freeSpaceWithView(long sessionId, long bytesToBeAvailable,
       BlockStoreLocation location, BlockMetadataManagerView view) throws WorkerOutOfSpaceException {
-    for (Iterator<Map.Entry<EvictorType, Evictor>> it = mEvictors.entrySet().iterator(); it
-        .hasNext();) {
-      Map.Entry<EvictorType, Evictor> entry = it.next();
-      Evictor evictor = entry.getValue();
-      EvictorType evictorType = entry.getKey();
-      if (evictor == mCurrentEvictor) {
-        continue;
-      }
-      EvictionPlan plan = evictor.freeSpaceWithView(bytesToBeAvailable, location, view);
-      // TODO(shupeng) choose whether to copy evictors or not
-      if (plan == null) {
-        throw new WorkerOutOfSpaceException(ExceptionMessage.NO_EVICTION_PLAN_TO_FREE_SPACE);
-      }
-      for (Pair<Long, BlockStoreLocation> blockInfo : plan.toEvict()) {
-        ((BlockStoreEventListener) evictor).onRemoveBlockByWorker(sessionId, blockInfo.getFirst());
-      }
-      for (BlockTransferInfo blockTransferInfo : plan.toMove()) {
-        BlockStoreLocation oldLocation = blockTransferInfo.getSrcLocation();
-        BlockStoreLocation newLocation = blockTransferInfo.getDstLocation();
-        if (oldLocation == null || newLocation == null) {
+    if (Configuration.getBoolean(PropertyKey.WORKER_EVICTOR_AUTO_ENABLED)) {
+      for (Iterator<Map.Entry<EvictorType, Evictor>> it = mEvictors.entrySet().iterator(); it
+          .hasNext();) {
+        Map.Entry<EvictorType, Evictor> entry = it.next();
+        Evictor evictor = entry.getValue();
+        EvictorType evictorType = entry.getKey();
+        if (evictor == mCurrentEvictor) {
           continue;
         }
-        try {
-          mLost.put(evictorType, mLost.get(evictorType) + mBlockMetadataManagerView
-              .getBlockMeta(blockTransferInfo.getBlockId()).getBlockSize());
-        } catch (BlockDoesNotExistException e) {
-          LOG.error("Failed to update lost caused by eviction because {}", e);
+        EvictionPlan plan = evictor.freeSpaceWithView(bytesToBeAvailable, location, view);
+        // TODO(shupeng) choose whether to copy evictors or not
+        if (plan == null) {
+          throw new WorkerOutOfSpaceException(ExceptionMessage.NO_EVICTION_PLAN_TO_FREE_SPACE);
         }
-        ((BlockStoreEventListener) evictor).onMoveBlockByWorker(sessionId,
-            blockTransferInfo.getBlockId(), blockTransferInfo.getSrcLocation(),
-            blockTransferInfo.getDstLocation());
+        for (Pair<Long, BlockStoreLocation> blockInfo : plan.toEvict()) {
+          ((BlockStoreEventListener) evictor).onRemoveBlockByWorker(sessionId,
+              blockInfo.getFirst());
+        }
+        for (BlockTransferInfo blockTransferInfo : plan.toMove()) {
+          BlockStoreLocation oldLocation = blockTransferInfo.getSrcLocation();
+          BlockStoreLocation newLocation = blockTransferInfo.getDstLocation();
+          if (oldLocation == null || newLocation == null) {
+            continue;
+          }
+          try {
+            mLost.put(evictorType, mLost.get(evictorType) + mBlockMetadataManagerView
+                .getBlockMeta(blockTransferInfo.getBlockId()).getBlockSize());
+          } catch (BlockDoesNotExistException e) {
+            LOG.error("Failed to update lost caused by eviction because {}", e);
+          }
+          ((BlockStoreEventListener) evictor).onMoveBlockByWorker(sessionId,
+              blockTransferInfo.getBlockId(), blockTransferInfo.getSrcLocation(),
+              blockTransferInfo.getDstLocation());
+        }
       }
     }
     return mCurrentEvictor.freeSpaceWithView(bytesToBeAvailable, location, view);
@@ -168,8 +183,16 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
     mEvictors.put(EvictorType.LRFU, new LRFUEvictor(mBlockMetadataManagerView, mAllocator));
     mEvictors.put(EvictorType.LIRS, new LIRSEvictor(mBlockMetadataManagerView, mAllocator));
     mEvictors.put(EvictorType.ARC, new ARCEvictor(mBlockMetadataManagerView, mAllocator));
-    mCurrentEvictor = mEvictors.get(EvictorType.LRU);
-    mCurrentEvictorType = EvictorType.LRU;
+    try {
+      mCurrentEvictor = CommonUtils.createNewClassInstance(
+          Configuration.<Evictor>getClass(PropertyKey.WORKER_EVICTOR_CLASS),
+          new Class[] {BlockMetadataManagerView.class, Allocator.class},
+          new Object[] {mBlockMetadataManagerView, mAllocator});
+      mCurrentEvictorType =
+          EvictorType.getEvictorType(Configuration.getInt(PropertyKey.WORKER_EVICTOR_TYPE));
+    } catch (Exception e) {
+      throw Throwables.propagate(e);
+    }
     mLost.put(EvictorType.LRU, 0L);
     mLost.put(EvictorType.LRFU, 0L);
     mLost.put(EvictorType.LIRS, 0L);
@@ -183,9 +206,17 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
    * @param blockId the id of the block to access
    */
   public void onAccessBlock(long sessionId, long blockId) {
-    mAccessTimes++;
-    for (Evictor evictor : mEvictors.values()) {
-      ((BlockStoreEventListener) evictor).onAccessBlock(sessionId, blockId);
+    try {
+      mAccessedBytes += mBlockMetadataManagerView.getBlockMeta(blockId).getBlockSize();
+    } catch (BlockDoesNotExistException e) {
+      LOG.error("Block does not exist because {}", e);
+    }
+    if (Configuration.getBoolean(PropertyKey.WORKER_EVICTOR_AUTO_ENABLED)) {
+      for (Evictor evictor : mEvictors.values()) {
+        ((BlockStoreEventListener) evictor).onAccessBlock(sessionId, blockId);
+      }
+    } else {
+      ((BlockStoreEventListener) mCurrentEvictor).onAccessBlock(sessionId, blockId);
     }
   }
 
@@ -196,8 +227,12 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
    * @param blockId the id of the block where the mutation to abort
    */
   public void onAbortBlock(long sessionId, long blockId) {
-    for (Evictor evictor : mEvictors.values()) {
-      ((BlockStoreEventListener) evictor).onAbortBlock(sessionId, blockId);
+    if (Configuration.getBoolean(PropertyKey.WORKER_EVICTOR_AUTO_ENABLED)) {
+      for (Evictor evictor : mEvictors.values()) {
+        ((BlockStoreEventListener) evictor).onAbortBlock(sessionId, blockId);
+      }
+    } else {
+      ((BlockStoreEventListener) mCurrentEvictor).onAbortBlock(sessionId, blockId);
     }
   }
 
@@ -209,9 +244,17 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
    * @param location the location of the block to be committed
    */
   public void onCommitBlock(long sessionId, long blockId, BlockStoreLocation location) {
-    mAccessTimes++;
-    for (Evictor evictor : mEvictors.values()) {
-      ((BlockStoreEventListener) evictor).onCommitBlock(sessionId, blockId, location);
+    try {
+      mAccessedBytes += mBlockMetadataManagerView.getBlockMeta(blockId).getBlockSize();
+    } catch (BlockDoesNotExistException e) {
+      LOG.error("Block does not exist because {}", e);
+    }
+    if (Configuration.getBoolean(PropertyKey.WORKER_EVICTOR_AUTO_ENABLED)) {
+      for (Evictor evictor : mEvictors.values()) {
+        ((BlockStoreEventListener) evictor).onCommitBlock(sessionId, blockId, location);
+      }
+    } else {
+      ((BlockStoreEventListener) mCurrentEvictor).onCommitBlock(sessionId, blockId, location);
     }
   }
 
@@ -240,9 +283,14 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
         LOG.error("The metadata of block {} cannot be found because {}", blockId, e);
       }
     }
-    for (Evictor evictor : mEvictors.values()) {
-      ((BlockStoreEventListener) evictor).onMoveBlockByClient(sessionId, blockId, oldLocation,
-          newLocation);
+    if (Configuration.getBoolean(PropertyKey.WORKER_EVICTOR_AUTO_ENABLED)) {
+      for (Evictor evictor : mEvictors.values()) {
+        ((BlockStoreEventListener) evictor).onMoveBlockByClient(sessionId, blockId, oldLocation,
+            newLocation);
+      }
+    } else {
+      ((BlockStoreEventListener) mCurrentEvictor).onMoveBlockByClient(sessionId, blockId,
+          oldLocation, newLocation);
     }
   }
 
@@ -282,8 +330,12 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
    * @param blockId the id of the block to be removed
    */
   public void onRemoveBlockByClient(long sessionId, long blockId) {
-    for (Evictor evictor : mEvictors.values()) {
-      ((BlockStoreEventListener) evictor).onRemoveBlockByClient(sessionId, blockId);
+    if (Configuration.getBoolean(PropertyKey.WORKER_EVICTOR_AUTO_ENABLED)) {
+      for (Evictor evictor : mEvictors.values()) {
+        ((BlockStoreEventListener) evictor).onRemoveBlockByClient(sessionId, blockId);
+      }
+    } else {
+      ((BlockStoreEventListener) mCurrentEvictor).onRemoveBlockByClient(sessionId, blockId);
     }
   }
 
