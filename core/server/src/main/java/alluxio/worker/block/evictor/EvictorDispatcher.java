@@ -190,6 +190,7 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
           new Object[] {mBlockMetadataManagerView, mAllocator});
       mCurrentEvictorType =
           EvictorType.getEvictorType(Configuration.getInt(PropertyKey.WORKER_EVICTOR_TYPE));
+      mEvictors.put(mCurrentEvictorType, mCurrentEvictor);
     } catch (Exception e) {
       throw Throwables.propagate(e);
     }
