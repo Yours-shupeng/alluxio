@@ -90,6 +90,7 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
         Map.Entry<EvictorType, Evictor> entry = it.next();
         Evictor evictor = entry.getValue();
         EvictorType evictorType = entry.getKey();
+        System.out.println(evictorType + ": lost: " + mLost.get(evictorType));
         if (mLost.get(evictorType) < minLost) {
           minLost = mLost.get(evictorType);
           candidateEvictor = evictor;
@@ -207,6 +208,7 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
    * @param blockId the id of the block to access
    */
   public void onAccessBlock(long sessionId, long blockId) {
+    System.out.println("Access block " + blockId);
     try {
       mAccessedBytes += mBlockMetadataManagerView.getBlockMeta(blockId).getBlockSize();
     } catch (BlockDoesNotExistException e) {
@@ -245,6 +247,7 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
    * @param location the location of the block to be committed
    */
   public void onCommitBlock(long sessionId, long blockId, BlockStoreLocation location) {
+    System.out.println("Commit block " + blockId);
     try {
       mAccessedBytes += mBlockMetadataManagerView.getBlockMeta(blockId).getBlockSize();
     } catch (BlockDoesNotExistException e) {
