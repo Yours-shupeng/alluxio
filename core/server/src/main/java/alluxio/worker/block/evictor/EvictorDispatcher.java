@@ -72,14 +72,14 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
   public void run() {
     while (true) {
       try {
-        Thread.sleep(60000);
+        Thread.sleep(10000);
         if (!Configuration.getBoolean(PropertyKey.WORKER_EVICTOR_AUTO_ENABLED)) {
           continue;
         }
       } catch (InterruptedException e) {
         LOG.error("Failed to sleep seconds because {}", e);
       }
-      if (mAccessedBytes < 2 * mMemBytes) {
+      if (mAccessedBytes < 3 * mMemBytes) {
         continue;
       }
       long minLost = Long.MAX_VALUE;
@@ -93,6 +93,9 @@ public class EvictorDispatcher extends Thread implements BlockStoreEventListener
         System.out.println(evictorType + ": lost: " + mLost.get(evictorType));
         if (mLost.get(evictorType) < minLost) {
           minLost = mLost.get(evictorType);
+          candidateEvictor = evictor;
+          candidateEvictorType = evictorType;
+        } else if (mLost.get(evictorType) == minLost && evictorType == EvictorType.LIRS) {
           candidateEvictor = evictor;
           candidateEvictorType = evictorType;
         }
