@@ -362,6 +362,9 @@ public class ARCEvictor extends AbstractEvictor {
         long b2Bytes = mLRUB2Bytes.get(location);
         long totalBytes = mTotalBytes.get(location);
         long t1LimitBytes = mT1LimitBytes.get(location);
+        if (mBlockSize == null) {
+          LOG.error("Failed due to null!");
+        }
         long blocksize = mBlockSize.get(blockId);
         long adjustSize;
         Map<Long, Boolean> t1 = mLRUT1.get(location);

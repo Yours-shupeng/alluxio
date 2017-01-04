@@ -83,7 +83,7 @@ public final class LIRSEvictor extends AbstractEvictor {
    * {@link #onRemoveBlockByClient(long, long)} or {@link #onRemoveBlockByWorker(long, long)} is
    * called.
    */
-  private Map<Long, Long> mBlockIdToSize = new ConcurrentHashMap<Long, Long>();
+  private Map<Long, Long> mBlockIdToSize = new ConcurrentHashMap<>();
   /**
    * Records the information of all LIR blocks. Pair<BlockStoreLocation, Long> identifies a block
    * because one block may contain more than one ghost copies on all tiers. One ghost block is used
@@ -231,6 +231,9 @@ public final class LIRSEvictor extends AbstractEvictor {
             new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
         Pair<BlockStoreLocation, Long> key = new Pair<BlockStoreLocation, Long>(location, blockId);
         SpaceContainer spaceContainer = mSpaceManager.get(location);
+        if (mBlockIdToSize == null) {
+          LOG.error("Failed due to null!");
+        }
         long blockSize = mBlockIdToSize.get(blockId);
         if (mHIRCache.containsKey(key)) {
           if (mHIRCache.get(key).isMoved()) {
