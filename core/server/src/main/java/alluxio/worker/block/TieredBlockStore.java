@@ -120,6 +120,7 @@ public class TieredBlockStore implements BlockStore {
   private final Map<EvictorType, TieredBlockStore> mSimulateBlockStore = new HashMap<>(4);
 
   private boolean mSimulate = false;
+  private boolean mAutoEvictor = Configuration.getBoolean(PropertyKey.WORKER_EVICTOR_AUTO_ENABLED);
 
   protected Map<String, Long> mAliasReadBytes = new HashMap<>();
   protected Map<String, Long> mAliasWriteBytes = new HashMap<>();
@@ -133,7 +134,9 @@ public class TieredBlockStore implements BlockStore {
     mMetaManager = BlockMetadataManager.createBlockMetadataManager();
     mLockManager = new BlockLockManager();
     mEvictorType = Configuration.getEnum(PropertyKey.WORKER_EVICTOR_TYPE, EvictorType.class);
-    createSimulateBlockStores();
+    if (mAutoEvictor) {
+      createSimulateBlockStores();
+    }
     BlockMetadataManagerView initManagerView = new BlockMetadataManagerView(mMetaManager,
         Collections.<Long>emptySet(), Collections.<Long>emptySet());
     mAllocator = Allocator.Factory.create(initManagerView);
@@ -152,7 +155,9 @@ public class TieredBlockStore implements BlockStore {
       mAliasReadBytes.put(mStorageTierAssoc.getAlias(i), 0L);
       mAliasWriteBytes.put(mStorageTierAssoc.getAlias(i), 0L);
     }
-    mEvictorCheck.submit(new EvictorCheckingThread());
+    if (mAutoEvictor) {
+      mEvictorCheck.submit(new EvictorCheckingThread());
+    }
   }
 
   /**
@@ -240,52 +245,24 @@ public class TieredBlockStore implements BlockStore {
     }
     EvictorType candidateEvictorType = null;
     try (LockResource r = new LockResource(mMetadataWriteLock)) {
-      boolean equal = true;
-      for (int i = mStorageTierAssoc.size() - 1; i >= 0; i--) {
-        long bytes = Long.MAX_VALUE;
-        for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
-            mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
-          Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
-          EvictorType type = entry.getKey();
-          long sBytes = entry.getValue().getAliasWriteBytes(mStorageTierAssoc.getAlias(i));
-          if (bytes != Long.MAX_VALUE && bytes != sBytes) {
-            equal = false;
-          }
-          if (sBytes < bytes) {
-            bytes = sBytes;
-            candidateEvictorType = type;
-          }
+      long bytesWrittenBelow = Long.MAX_VALUE;
+      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+        EvictorType type = entry.getKey();
+        TieredBlockStore store = entry.getValue();
+        long bytesBelow = 0;
+        for (int i = 1; i < mStorageTierAssoc.size(); i++) {
+          bytesBelow += store.getAliasWriteBytes(mStorageTierAssoc.getAlias(i));
         }
-        if (!equal) {
-          break;
+        if (bytesBelow < bytesWrittenBelow) {
+          bytesWrittenBelow = bytesBelow;
+          candidateEvictorType = type;
         }
-      }
-      if (equal) {
-        for (int i = 0; i < mStorageTierAssoc.size(); i++) {
-          long bytes = -1;
-          for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
-              mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
-            Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
-            EvictorType type = entry.getKey();
-            long sBytes = entry.getValue().getAliasReadBytes(mStorageTierAssoc.getAlias(i));
-            if (bytes != -1 && bytes != sBytes) {
-              equal = false;
-            }
-            if (sBytes > bytes) {
-              bytes = sBytes;
-              candidateEvictorType = type;
-            }
-          }
-          if (!equal) {
-            break;
-          }
-        }
-      }
-      if (equal) {
-        return;
       }
       if (candidateEvictorType != mEvictorType || candidateEvictorType == null) {
         LOG.info("Switch evictor type from {} to {}.", mEvictorType, candidateEvictorType);
+        mEvictorType = candidateEvictorType;
         mEvictor = createEvictor(getUpdatedView(), mAllocator, mEvictorType);
       }
       for (int i = 0; i < mStorageTierAssoc.size(); i++) {
