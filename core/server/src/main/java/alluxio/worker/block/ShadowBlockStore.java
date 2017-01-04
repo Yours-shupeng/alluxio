@@ -24,7 +24,6 @@ import alluxio.worker.block.meta.TempBlockMeta;
 import com.google.common.base.Throwables;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.Set;
 
 /**
@@ -41,14 +40,7 @@ public class ShadowBlockStore extends TieredBlockStore {
    */
   public ShadowBlockStore(BlockMetadataManager metaManager, Set<Long> pinnedInodes,
       EvictorType evictorType) {
-    super(metaManager, pinnedInodes, true);
-    BlockMetadataManagerView view =
-        new BlockMetadataManagerView(mMetaManager, pinnedInodes, Collections.<Long>emptySet());
-    mEvictor = createEvictor(view, mAllocator, evictorType);
-    mEvictorType = evictorType;
-    if (mEvictor instanceof BlockStoreEventListener) {
-      registerBlockStoreEventListener((BlockStoreEventListener) mEvictor);
-    }
+    super(metaManager, pinnedInodes, evictorType, true);
   }
 
   @Override

@@ -165,10 +165,11 @@ public class TieredBlockStore implements BlockStore {
    *
    * @param metaManager block metadata manager
    * @param pinnedInodes set of pined nodes in memory
+   * @param evictorType type of evictor
    * @param simulate true or false
    */
   public TieredBlockStore(BlockMetadataManager metaManager, Set<Long> pinnedInodes,
-      boolean simulate) {
+      EvictorType evictorType, boolean simulate) {
     mMetaManager = new BlockMetadataManager(metaManager);
     mLockManager = new BlockLockManager();
     mSimulate = simulate;
@@ -177,6 +178,11 @@ public class TieredBlockStore implements BlockStore {
     mAllocator = Allocator.Factory.create(initManagerView);
     if (mAllocator instanceof BlockStoreEventListener) {
       registerBlockStoreEventListener((BlockStoreEventListener) mAllocator);
+    }
+    mEvictor = createEvictor(initManagerView, mAllocator, evictorType);
+    mEvictorType = evictorType;
+    if (mEvictor instanceof BlockStoreEventListener) {
+      registerBlockStoreEventListener((BlockStoreEventListener) mEvictor);
     }
     mStorageTierAssoc = new WorkerStorageTierAssoc();
     for (int i = 0; i < mStorageTierAssoc.size(); i++) {
@@ -255,16 +261,19 @@ public class TieredBlockStore implements BlockStore {
         for (int i = 1; i < mStorageTierAssoc.size(); i++) {
           bytesBelow += store.getAliasWriteBytes(mStorageTierAssoc.getAlias(i));
         }
-        LOG.info("Evictor {} total write {} bytes.", type, bytesBelow);
+        LOG.info("Evictor {} write below {} bytes.", type, bytesBelow);
         if (bytesBelow < bytesWrittenBelow) {
           bytesWrittenBelow = bytesBelow;
           candidateEvictorType = type;
         }
+        bytesBelow += store.getAliasWriteBytes(mStorageTierAssoc.getAlias(0));
+        LOG.info("Evictor {} total write {} bytes.", type, bytesBelow);
       }
-      if (candidateEvictorType != mEvictorType || candidateEvictorType == null) {
+      if (candidateEvictorType != mEvictorType) {
         LOG.info("Switch evictor type from {} to {}.", mEvictorType, candidateEvictorType);
         mEvictorType = candidateEvictorType;
         mEvictor = createEvictor(getUpdatedView(), mAllocator, mEvictorType);
+        registerBlockStoreEventListener((BlockStoreEventListener) mEvictor);
       }
       for (int i = 0; i < mStorageTierAssoc.size(); i++) {
         mAliasReadBytes.put(mStorageTierAssoc.getAlias(i), 0L);
