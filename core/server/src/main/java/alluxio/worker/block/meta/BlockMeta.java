@@ -35,6 +35,17 @@ public final class BlockMeta extends AbstractBlockMeta {
   }
 
   /**
+   * Create an instance of {@link BlockMeta}.
+   *
+   * @param dir the parent directory
+   * @param meta instance of {@link BlockMeta}
+   */
+  public BlockMeta(StorageDir dir, BlockMeta meta) {
+    super(meta.getBlockId(), dir);
+    mBlockSize = meta.getBlockSize();
+  }
+
+  /**
    * Creates a new instance of {@link BlockMeta} from {@link TempBlockMeta}.
    *
    * @param tempBlock uncommitted block metadata

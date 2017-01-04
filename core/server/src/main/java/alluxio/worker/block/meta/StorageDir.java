@@ -30,6 +30,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -70,6 +72,49 @@ public final class StorageDir {
   }
 
   /**
+   * Create an instance of {@link StorageDir}.
+   *
+   * @param tier parent storage tier
+   * @param dir the storage directory to be copied
+   */
+  public StorageDir(StorageTier tier, StorageDir dir) {
+    mTier = Preconditions.checkNotNull(tier);
+    mDirIndex = dir.getDirIndex();
+    mCapacityBytes = dir.getCapacityBytes();
+    mAvailableBytes = new AtomicLong(dir.getAvailableBytes());
+    mCommittedBytes = new AtomicLong(dir.getCommittedBytes());
+    mDirPath = dir.getDirPath();
+    mBlockIdToBlockMap = new HashMap<>(200);
+    for (BlockMeta blockMeta : dir.getBlocks()) {
+      mBlockIdToBlockMap.put(blockMeta.getBlockId(), new BlockMeta(this, blockMeta));
+    }
+    mBlockIdToTempBlockMap = new HashMap<>(200);
+    for (TempBlockMeta tempBlockMeta : dir.getTempBlocks()) {
+      mBlockIdToTempBlockMap.put(tempBlockMeta.getBlockId(),
+          new TempBlockMeta(this, tempBlockMeta));
+    }
+    mSessionIdToTempBlockIdsMap = dir.copySessionToTempBlockIdsMap();
+  }
+
+  /**
+   * Deep copy {@link #mSessionIdToTempBlockIdsMap}.
+   *
+   * @return the copied map
+   */
+  public Map<Long, Set<Long>> copySessionToTempBlockIdsMap() {
+    Map<Long, Set<Long>> res = new HashMap<>(200);
+    for (Iterator<Map.Entry<Long, Set<Long>>> it =
+        mSessionIdToTempBlockIdsMap.entrySet().iterator(); it.hasNext();) {
+      Map.Entry<Long, Set<Long>> entry = it.next();
+      long sessionId = entry.getKey();
+      Set<Long> tempBlockIds = new HashSet<>();
+      tempBlockIds.addAll(entry.getValue());
+      res.put(sessionId, tempBlockIds);
+    }
+    return res;
+  }
+
+  /**
    * Factory method to create {@link StorageDir}.
    *
    * It will load metadata of existing committed blocks in the dirPath specified. Only files with
@@ -104,8 +149,8 @@ public final class StorageDir {
    * @throws IOException if the storage directory cannot be created with the appropriate permissions
    * @throws WorkerOutOfSpaceException when metadata can not be added due to limited left space
    */
-  private void initializeMeta() throws BlockAlreadyExistsException, IOException,
-      WorkerOutOfSpaceException {
+  private void initializeMeta()
+      throws BlockAlreadyExistsException, IOException, WorkerOutOfSpaceException {
     // Create the storage directory path
     FileUtils.createStorageDirPath(mDirPath);
 
@@ -264,14 +309,23 @@ public final class StorageDir {
   }
 
   /**
+   * Return the list of temp blocks stored in the dir.
+   *
+   * @return list of temp blocks
+   */
+  public List<TempBlockMeta> getTempBlocks() {
+    return new ArrayList<>(mBlockIdToTempBlockMap.values());
+  }
+
+  /**
    * Adds the metadata of a new block into this storage dir.
    *
    * @param blockMeta the metadata of the block
    * @throws BlockAlreadyExistsException if blockId already exists
    * @throws WorkerOutOfSpaceException when not enough space to hold block
    */
-  public void addBlockMeta(BlockMeta blockMeta) throws WorkerOutOfSpaceException,
-      BlockAlreadyExistsException {
+  public void addBlockMeta(BlockMeta blockMeta)
+      throws WorkerOutOfSpaceException, BlockAlreadyExistsException {
     Preconditions.checkNotNull(blockMeta);
     long blockId = blockMeta.getBlockId();
     long blockSize = blockMeta.getBlockSize();
@@ -281,8 +335,8 @@ public final class StorageDir {
           blockSize, getAvailableBytes(), blockMeta.getBlockLocation().tierAlias());
     }
     if (hasBlockMeta(blockId)) {
-      throw new BlockAlreadyExistsException(ExceptionMessage.ADD_EXISTING_BLOCK, blockId, blockMeta
-          .getBlockLocation().tierAlias());
+      throw new BlockAlreadyExistsException(ExceptionMessage.ADD_EXISTING_BLOCK, blockId,
+          blockMeta.getBlockLocation().tierAlias());
     }
     mBlockIdToBlockMap.put(blockId, blockMeta);
     reserveSpace(blockSize, true);
@@ -295,8 +349,8 @@ public final class StorageDir {
    * @throws BlockAlreadyExistsException if blockId already exists
    * @throws WorkerOutOfSpaceException when not enough space to hold block
    */
-  public void addTempBlockMeta(TempBlockMeta tempBlockMeta) throws WorkerOutOfSpaceException,
-      BlockAlreadyExistsException {
+  public void addTempBlockMeta(TempBlockMeta tempBlockMeta)
+      throws WorkerOutOfSpaceException, BlockAlreadyExistsException {
     Preconditions.checkNotNull(tempBlockMeta);
     long sessionId = tempBlockMeta.getSessionId();
     long blockId = tempBlockMeta.getBlockId();

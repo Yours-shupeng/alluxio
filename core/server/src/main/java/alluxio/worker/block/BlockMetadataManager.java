@@ -73,6 +73,21 @@ public final class BlockMetadataManager {
   }
 
   /**
+   * Copy a new instance of {@link BlockMetadataManager}.
+   *
+   * @param metadataManager block metadata manager
+   */
+  public BlockMetadataManager(BlockMetadataManager metadataManager) {
+    mTiers = new ArrayList<>(metadataManager.getTiers().size());
+    mAliasToTiers = new HashMap<>(metadataManager.getTiers().size());
+    for (StorageTier tier : metadataManager.getTiers()) {
+      StorageTier st = new StorageTier(tier);
+      mTiers.add(st);
+      mAliasToTiers.put(st.getTierAlias(), st);
+    }
+  }
+
+  /**
    * Creates a new instance of {@link BlockMetadataManager}.
    *
    * @return a {@link BlockMetadataManager} instance

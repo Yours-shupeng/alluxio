@@ -35,6 +35,7 @@ import java.util.Map;
 
 /**
  * Adaptively choose the best Evictor according to the current access behavior.
+ * Wrong!!! Each evictor has independent behaviours will cause different memory state.
  */
 public class EvictorDispatcher extends Thread implements BlockStoreEventListener {
 

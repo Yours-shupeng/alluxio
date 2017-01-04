@@ -23,11 +23,17 @@ import alluxio.exception.ExceptionMessage;
 import alluxio.exception.InvalidWorkerStateException;
 import alluxio.exception.WorkerOutOfSpaceException;
 import alluxio.resource.LockResource;
+import alluxio.util.ThreadFactoryUtils;
 import alluxio.util.io.FileUtils;
 import alluxio.worker.block.allocator.Allocator;
+import alluxio.worker.block.evictor.ARCEvictor;
 import alluxio.worker.block.evictor.BlockTransferInfo;
 import alluxio.worker.block.evictor.EvictionPlan;
-import alluxio.worker.block.evictor.EvictorDispatcher;
+import alluxio.worker.block.evictor.Evictor;
+import alluxio.worker.block.evictor.EvictorType;
+import alluxio.worker.block.evictor.LIRSEvictor;
+import alluxio.worker.block.evictor.LRFUEvictor;
+import alluxio.worker.block.evictor.LRUEvictor;
 import alluxio.worker.block.io.BlockReader;
 import alluxio.worker.block.io.BlockWriter;
 import alluxio.worker.block.io.LocalFileBlockReader;
@@ -48,9 +54,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -80,17 +89,18 @@ import javax.annotation.concurrent.NotThreadSafe;
  * </ul>
  */
 @NotThreadSafe // TODO(jiri): make thread-safe (c.f. ALLUXIO-1624)
-public final class TieredBlockStore implements BlockStore {
+public class TieredBlockStore implements BlockStore {
   private static final Logger LOG = LoggerFactory.getLogger(Constants.LOGGER_TYPE);
   private static final int MAX_RETRIES =
       Configuration.getInt(PropertyKey.WORKER_TIERED_STORE_RETRY);
 
-  private final BlockMetadataManager mMetaManager;
-  private final BlockLockManager mLockManager;
-  private final Allocator mAllocator;
-  private final EvictorDispatcher mEvictorDispatcher;
+  protected final BlockMetadataManager mMetaManager;
+  protected final BlockLockManager mLockManager;
+  protected final Allocator mAllocator;
+  protected Evictor mEvictor;
+  protected EvictorType mEvictorType;
 
-  private final List<BlockStoreEventListener> mBlockStoreEventListeners = new ArrayList<>();
+  protected final List<BlockStoreEventListener> mBlockStoreEventListeners = new ArrayList<>();
 
   /** A set of pinned inodes fetched from the master. */
   private final Set<Long> mPinnedInodes = new HashSet<>();
@@ -99,13 +109,22 @@ public final class TieredBlockStore implements BlockStore {
   private final ReentrantReadWriteLock mMetadataLock = new ReentrantReadWriteLock();
 
   /** ReadLock provided by {@link #mMetadataLock} to guard metadata read operations. */
-  private final Lock mMetadataReadLock = mMetadataLock.readLock();
+  protected final Lock mMetadataReadLock = mMetadataLock.readLock();
 
   /** WriteLock provided by {@link #mMetadataLock} to guard metadata write operations. */
-  private final Lock mMetadataWriteLock = mMetadataLock.writeLock();
+  protected final Lock mMetadataWriteLock = mMetadataLock.writeLock();
 
   /** Association between storage tier aliases and ordinals. */
   private final StorageTierAssoc mStorageTierAssoc;
+
+  private final Map<EvictorType, TieredBlockStore> mSimulateBlockStore = new HashMap<>(4);
+
+  private boolean mSimulate = false;
+
+  protected Map<String, Long> mAliasReadBytes = new HashMap<>();
+  protected Map<String, Long> mAliasWriteBytes = new HashMap<>();
+  private final ExecutorService mEvictorCheck =
+      Executors.newFixedThreadPool(1, ThreadFactoryUtils.build("Check Evictor", true));
 
   /**
    * Creates a new instance of {@link TieredBlockStore}.
@@ -113,7 +132,8 @@ public final class TieredBlockStore implements BlockStore {
   public TieredBlockStore() {
     mMetaManager = BlockMetadataManager.createBlockMetadataManager();
     mLockManager = new BlockLockManager();
-
+    mEvictorType = Configuration.getEnum(PropertyKey.WORKER_EVICTOR_TYPE, EvictorType.class);
+    createSimulateBlockStores();
     BlockMetadataManagerView initManagerView = new BlockMetadataManagerView(mMetaManager,
         Collections.<Long>emptySet(), Collections.<Long>emptySet());
     mAllocator = Allocator.Factory.create(initManagerView);
@@ -121,13 +141,179 @@ public final class TieredBlockStore implements BlockStore {
       registerBlockStoreEventListener((BlockStoreEventListener) mAllocator);
     }
 
-    initManagerView = new BlockMetadataManagerView(mMetaManager, Collections.<Long>emptySet(),
-        Collections.<Long>emptySet());
-    mEvictorDispatcher = new EvictorDispatcher(initManagerView, mAllocator);
-    mEvictorDispatcher.start();
-    registerBlockStoreEventListener((BlockStoreEventListener) mEvictorDispatcher);
+    mEvictor = Evictor.Factory.create(initManagerView, mAllocator);
+    mSimulateBlockStore.put(mEvictorType, this);
+    if (mEvictor instanceof BlockStoreEventListener) {
+      registerBlockStoreEventListener((BlockStoreEventListener) mEvictor);
+    }
 
     mStorageTierAssoc = new WorkerStorageTierAssoc();
+    for (int i = 0; i < mStorageTierAssoc.size(); i++) {
+      mAliasReadBytes.put(mStorageTierAssoc.getAlias(i), 0L);
+      mAliasWriteBytes.put(mStorageTierAssoc.getAlias(i), 0L);
+    }
+    mEvictorCheck.submit(new EvictorCheckingThread());
+  }
+
+  /**
+   * Create an instance of {@link TieredBlockStore}.
+   *
+   * @param metaManager block metadata manager
+   * @param pinnedInodes set of pined nodes in memory
+   * @param simulate true or false
+   */
+  public TieredBlockStore(BlockMetadataManager metaManager, Set<Long> pinnedInodes,
+      boolean simulate) {
+    mMetaManager = new BlockMetadataManager(metaManager);
+    mLockManager = new BlockLockManager();
+    mSimulate = simulate;
+    BlockMetadataManagerView initManagerView =
+        new BlockMetadataManagerView(mMetaManager, pinnedInodes, Collections.<Long>emptySet());
+    mAllocator = Allocator.Factory.create(initManagerView);
+    if (mAllocator instanceof BlockStoreEventListener) {
+      registerBlockStoreEventListener((BlockStoreEventListener) mAllocator);
+    }
+    mStorageTierAssoc = new WorkerStorageTierAssoc();
+    for (int i = 0; i < mStorageTierAssoc.size(); i++) {
+      mAliasReadBytes.put(mStorageTierAssoc.getAlias(i), 0L);
+      mAliasWriteBytes.put(mStorageTierAssoc.getAlias(i), 0L);
+    }
+  }
+
+  /**
+   * Create a {@link ShadowBlockStore} for each kind of evictor.
+   */
+  private void createSimulateBlockStores() {
+    if (mEvictorType != EvictorType.LRU) {
+      mSimulateBlockStore.put(EvictorType.LRU,
+          new ShadowBlockStore(mMetaManager, Collections.<Long>emptySet(), mEvictorType));
+    }
+    if (mEvictorType != EvictorType.LRFU) {
+      mSimulateBlockStore.put(EvictorType.LRFU,
+          new ShadowBlockStore(mMetaManager, Collections.<Long>emptySet(), mEvictorType));
+    }
+    if (mEvictorType != EvictorType.LIRS) {
+      mSimulateBlockStore.put(EvictorType.LIRS,
+          new ShadowBlockStore(mMetaManager, Collections.<Long>emptySet(), mEvictorType));
+    }
+    if (mEvictorType != EvictorType.ARC) {
+      mSimulateBlockStore.put(EvictorType.ARC,
+          new ShadowBlockStore(mMetaManager, Collections.<Long>emptySet(), mEvictorType));
+    }
+  }
+
+  /**
+   * Create evictor according to type of evictor.
+   *
+   * @param view instance of {@link BlockMetadataManagerView}
+   * @param allocator instance of {@link Allocator}
+   * @param type type of evictor
+   * @return an evictor
+   */
+  public Evictor createEvictor(BlockMetadataManagerView view, Allocator allocator,
+      EvictorType type) {
+    switch (type) {
+      case LRU:
+        return new LRUEvictor(view, allocator);
+      case LRFU:
+        return new LRFUEvictor(view, allocator);
+      case LIRS:
+        return new LIRSEvictor(view, allocator);
+      case ARC:
+        return new ARCEvictor(view, allocator);
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Reset {@link ShadowBlockStore} and {@link Evictor} with a fixed interval.
+   */
+  public void resetEvictor() {
+    long readBytes = 0L;
+    for (int i = 0; i < mStorageTierAssoc.size(); i++) {
+      readBytes += mAliasReadBytes.get(mStorageTierAssoc.getAlias(i));
+    }
+    // Don't reset evictor if the total read bytes smaller than twice of memory capacity.
+    if (readBytes < mMetaManager.getTier(mStorageTierAssoc.getAlias(0)).getCapacityBytes() * 2) {
+      return;
+    }
+    EvictorType candidateEvictorType = null;
+    try (LockResource r = new LockResource(mMetadataWriteLock)) {
+      boolean equal = true;
+      for (int i = mStorageTierAssoc.size() - 1; i >= 0; i--) {
+        long bytes = Long.MAX_VALUE;
+        for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+            mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+          Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+          EvictorType type = entry.getKey();
+          long sBytes = entry.getValue().getAliasWriteBytes(mStorageTierAssoc.getAlias(i));
+          if (bytes != Long.MAX_VALUE && bytes != sBytes) {
+            equal = false;
+          }
+          if (sBytes < bytes) {
+            bytes = sBytes;
+            candidateEvictorType = type;
+          }
+        }
+        if (!equal) {
+          break;
+        }
+      }
+      if (equal) {
+        for (int i = 0; i < mStorageTierAssoc.size(); i++) {
+          long bytes = -1;
+          for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+              mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+            Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+            EvictorType type = entry.getKey();
+            long sBytes = entry.getValue().getAliasReadBytes(mStorageTierAssoc.getAlias(i));
+            if (bytes != -1 && bytes != sBytes) {
+              equal = false;
+            }
+            if (sBytes > bytes) {
+              bytes = sBytes;
+              candidateEvictorType = type;
+            }
+          }
+          if (!equal) {
+            break;
+          }
+        }
+      }
+      if (equal) {
+        return;
+      }
+      if (candidateEvictorType != mEvictorType || candidateEvictorType == null) {
+        LOG.info("Switch evictor type from {} to {}.", mEvictorType, candidateEvictorType);
+        mEvictor = createEvictor(getUpdatedView(), mAllocator, mEvictorType);
+      }
+      for (int i = 0; i < mStorageTierAssoc.size(); i++) {
+        mAliasReadBytes.put(mStorageTierAssoc.getAlias(i), 0L);
+        mAliasWriteBytes.put(mStorageTierAssoc.getAlias(i), 0L);
+      }
+      createSimulateBlockStores();
+    }
+  }
+
+  /**
+   * Get write bytes in the fixed interval according to alias.
+   *
+   * @param alias alias of tier
+   * @return bytes written
+   */
+  public long getAliasWriteBytes(String alias) {
+    return mAliasWriteBytes.get(alias);
+  }
+
+  /**
+   * Get read bytes in the fixed interval according to alias.
+   *
+   * @param alias alias of tier
+   * @return bytes read
+   */
+  public long getAliasReadBytes(String alias) {
+    return mAliasReadBytes.get(alias);
   }
 
   @Override
@@ -181,6 +367,15 @@ public final class TieredBlockStore implements BlockStore {
   public TempBlockMeta createBlockMeta(long sessionId, long blockId, BlockStoreLocation location,
       long initialBlockSize)
       throws BlockAlreadyExistsException, WorkerOutOfSpaceException, IOException {
+    if (!mSimulate) {
+      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+        if (entry.getKey() != mEvictorType) {
+          entry.getValue().createBlockMeta(sessionId, blockId, location, initialBlockSize);
+        }
+      }
+    }
     for (int i = 0; i < MAX_RETRIES + 1; i++) {
       TempBlockMeta tempBlockMeta =
           createBlockMetaInternal(sessionId, blockId, location, initialBlockSize, true);
@@ -220,6 +415,15 @@ public final class TieredBlockStore implements BlockStore {
   @Override
   public void commitBlock(long sessionId, long blockId) throws BlockAlreadyExistsException,
       InvalidWorkerStateException, BlockDoesNotExistException, IOException {
+    if (!mSimulate) {
+      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+        if (entry.getKey() != mEvictorType) {
+          entry.getValue().commitBlock(sessionId, blockId);
+        }
+      }
+    }
     BlockStoreLocation loc = commitBlockInternal(sessionId, blockId);
     synchronized (mBlockStoreEventListeners) {
       for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
@@ -231,6 +435,15 @@ public final class TieredBlockStore implements BlockStore {
   @Override
   public void abortBlock(long sessionId, long blockId) throws BlockAlreadyExistsException,
       BlockDoesNotExistException, InvalidWorkerStateException, IOException {
+    if (!mSimulate) {
+      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+        if (entry.getKey() != mEvictorType) {
+          entry.getValue().abortBlock(sessionId, blockId);
+        }
+      }
+    }
     abortBlockInternal(sessionId, blockId);
     synchronized (mBlockStoreEventListeners) {
       for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
@@ -242,6 +455,15 @@ public final class TieredBlockStore implements BlockStore {
   @Override
   public void requestSpace(long sessionId, long blockId, long additionalBytes)
       throws BlockDoesNotExistException, WorkerOutOfSpaceException, IOException {
+    if (!mSimulate) {
+      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+        if (entry.getKey() != mEvictorType) {
+          entry.getValue().requestSpace(sessionId, blockId, additionalBytes);
+        }
+      }
+    }
     for (int i = 0; i < MAX_RETRIES + 1; i++) {
       Pair<Boolean, BlockStoreLocation> requestResult =
           requestSpaceInternal(blockId, additionalBytes);
@@ -268,6 +490,15 @@ public final class TieredBlockStore implements BlockStore {
       BlockStoreLocation newLocation)
       throws BlockDoesNotExistException, BlockAlreadyExistsException, InvalidWorkerStateException,
       WorkerOutOfSpaceException, IOException {
+    if (!mSimulate) {
+      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+        if (entry.getKey() != mEvictorType) {
+          entry.getValue().moveBlock(sessionId, blockId, oldLocation, newLocation);
+        }
+      }
+    }
     for (int i = 0; i < MAX_RETRIES + 1; i++) {
       MoveBlockResult moveResult = moveBlockInternal(sessionId, blockId, oldLocation, newLocation);
       if (moveResult.getSuccess()) {
@@ -296,6 +527,15 @@ public final class TieredBlockStore implements BlockStore {
   @Override
   public void removeBlock(long sessionId, long blockId, BlockStoreLocation location)
       throws InvalidWorkerStateException, BlockDoesNotExistException, IOException {
+    if (!mSimulate) {
+      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+        if (entry.getKey() != mEvictorType) {
+          entry.getValue().removeBlock(sessionId, blockId, location);
+        }
+      }
+    }
     removeBlockInternal(sessionId, blockId, location);
     synchronized (mBlockStoreEventListeners) {
       for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
@@ -306,9 +546,25 @@ public final class TieredBlockStore implements BlockStore {
 
   @Override
   public void accessBlock(long sessionId, long blockId) throws BlockDoesNotExistException {
+    if (!mSimulate) {
+      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+        if (entry.getKey() != mEvictorType) {
+          entry.getValue().accessBlock(sessionId, blockId);
+        }
+      }
+    }
     boolean hasBlock;
     try (LockResource r = new LockResource(mMetadataReadLock)) {
       hasBlock = mMetaManager.hasBlockMeta(blockId);
+      if (hasBlock) {
+        BlockMeta blockMeta = mMetaManager.getBlockMeta(blockId);
+        long originReadBytes =
+            mAliasReadBytes.get(blockMeta.getParentDir().getParentTier().getTierAlias());
+        mAliasReadBytes.put(blockMeta.getParentDir().getParentTier().getTierAlias(),
+            originReadBytes + blockMeta.getBlockSize());
+      }
     }
     if (!hasBlock) {
       throw new BlockDoesNotExistException(ExceptionMessage.NO_BLOCK_ID_FOUND, blockId);
@@ -323,12 +579,30 @@ public final class TieredBlockStore implements BlockStore {
   @Override
   public void freeSpace(long sessionId, long availableBytes, BlockStoreLocation location)
       throws BlockDoesNotExistException, WorkerOutOfSpaceException, IOException {
+    if (!mSimulate) {
+      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+        if (entry.getKey() != mEvictorType) {
+          entry.getValue().freeSpace(sessionId, availableBytes, location);
+        }
+      }
+    }
     // TODO(bin): Consider whether to retry here.
     freeSpaceInternal(sessionId, availableBytes, location);
   }
 
   @Override
   public void cleanupSession(long sessionId) {
+    if (!mSimulate) {
+      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+        if (entry.getKey() != mEvictorType) {
+          entry.getValue().cleanupSession(sessionId);
+        }
+      }
+    }
     // Release all locks the session is holding.
     mLockManager.cleanupSession(sessionId);
 
@@ -405,7 +679,7 @@ public final class TieredBlockStore implements BlockStore {
    * @throws BlockAlreadyExistsException if block id already exists in committed blocks
    * @throws InvalidWorkerStateException if block id is not owned by session id
    */
-  private void checkTempBlockOwnedBySession(long sessionId, long blockId)
+  protected void checkTempBlockOwnedBySession(long sessionId, long blockId)
       throws BlockDoesNotExistException, BlockAlreadyExistsException, InvalidWorkerStateException {
     if (mMetaManager.hasBlockMeta(blockId)) {
       throw new BlockAlreadyExistsException(ExceptionMessage.TEMP_BLOCK_ID_COMMITTED, blockId);
@@ -428,7 +702,7 @@ public final class TieredBlockStore implements BlockStore {
    * @throws InvalidWorkerStateException if block id is not owned by session id
    * @throws IOException if I/O errors occur when deleting the block file
    */
-  private void abortBlockInternal(long sessionId, long blockId) throws BlockDoesNotExistException,
+  protected void abortBlockInternal(long sessionId, long blockId) throws BlockDoesNotExistException,
       BlockAlreadyExistsException, InvalidWorkerStateException, IOException {
     long lockId = mLockManager.lockBlock(sessionId, blockId, BlockLockType.WRITE);
     try {
@@ -464,7 +738,7 @@ public final class TieredBlockStore implements BlockStore {
    * @throws InvalidWorkerStateException if block id is not owned by session id
    * @throws IOException if I/O errors occur when deleting the block file
    */
-  private BlockStoreLocation commitBlockInternal(long sessionId, long blockId)
+  protected BlockStoreLocation commitBlockInternal(long sessionId, long blockId)
       throws BlockAlreadyExistsException, InvalidWorkerStateException, BlockDoesNotExistException,
       IOException {
     long lockId = mLockManager.lockBlock(sessionId, blockId, BlockLockType.WRITE);
@@ -482,8 +756,9 @@ public final class TieredBlockStore implements BlockStore {
         srcPath = tempBlockMeta.getPath();
         dstPath = tempBlockMeta.getCommitPath();
         loc = tempBlockMeta.getBlockLocation();
+        long originWriteBytes = mAliasWriteBytes.get(loc.tierAlias());
+        mAliasWriteBytes.put(loc.tierAlias(), originWriteBytes + tempBlockMeta.getBlockSize());
       }
-
       // Heavy IO is guarded by block lock but not metadata lock. This may throw IOException.
       FileUtils.move(srcPath, dstPath);
 
@@ -512,7 +787,7 @@ public final class TieredBlockStore implements BlockStore {
    *         {@link WorkerOutOfSpaceException} because allocation failure could be an expected case)
    * @throws BlockAlreadyExistsException if there is already a block with the same block id
    */
-  private TempBlockMeta createBlockMetaInternal(long sessionId, long blockId,
+  protected TempBlockMeta createBlockMetaInternal(long sessionId, long blockId,
       BlockStoreLocation location, long initialBlockSize, boolean newBlock)
       throws BlockAlreadyExistsException {
     // NOTE: a temp block is supposed to be visible for its own writer, unnecessary to acquire
@@ -584,12 +859,11 @@ public final class TieredBlockStore implements BlockStore {
    * @throws WorkerOutOfSpaceException if it is impossible to achieve the free requirement
    * @throws IOException if I/O errors occur when removing or moving block files
    */
-  private void freeSpaceInternal(long sessionId, long availableBytes, BlockStoreLocation location)
+  protected void freeSpaceInternal(long sessionId, long availableBytes, BlockStoreLocation location)
       throws WorkerOutOfSpaceException, IOException {
     EvictionPlan plan;
     try (LockResource r = new LockResource(mMetadataReadLock)) {
-      plan = mEvictorDispatcher.freeSpaceWithView(sessionId, availableBytes, location,
-          getUpdatedView());
+      plan = mEvictor.freeSpaceWithView(availableBytes, location, getUpdatedView());
       // Absent plan means failed to evict enough space.
       if (plan == null) {
         throw new WorkerOutOfSpaceException(ExceptionMessage.NO_EVICTION_PLAN_TO_FREE_SPACE);
@@ -666,7 +940,7 @@ public final class TieredBlockStore implements BlockStore {
    *
    * @return {@link BlockMetadataManagerView}, an updated view with most recent information
    */
-  private BlockMetadataManagerView getUpdatedView() {
+  protected BlockMetadataManagerView getUpdatedView() {
     // TODO(calvin): Update the view object instead of creating new one every time.
     synchronized (mPinnedInodes) {
       return new BlockMetadataManagerView(mMetaManager, mPinnedInodes,
@@ -688,7 +962,7 @@ public final class TieredBlockStore implements BlockStore {
    * @throws InvalidWorkerStateException if the block to move is a temp block
    * @throws IOException if I/O errors occur when moving block file
    */
-  private MoveBlockResult moveBlockInternal(long sessionId, long blockId,
+  protected MoveBlockResult moveBlockInternal(long sessionId, long blockId,
       BlockStoreLocation oldLocation, BlockStoreLocation newLocation)
       throws BlockDoesNotExistException, BlockAlreadyExistsException, InvalidWorkerStateException,
       IOException {
@@ -741,6 +1015,10 @@ public final class TieredBlockStore implements BlockStore {
         // If this metadata update fails, we panic for now.
         // TODO(bin): Implement rollback scheme to recover from IO failures.
         mMetaManager.moveBlockMeta(srcBlockMeta, dstTempBlock);
+        long originWriteBytes = mAliasWriteBytes.get(dstLocation.tierAlias());
+        long originReadBytes = mAliasReadBytes.get(srcLocation.tierAlias());
+        mAliasWriteBytes.put(dstLocation.tierAlias(), originWriteBytes + blockSize);
+        mAliasReadBytes.put(srcLocation.tierAlias(), originReadBytes + blockSize);
       } catch (BlockAlreadyExistsException | BlockDoesNotExistException
           | WorkerOutOfSpaceException e) {
         // WorkerOutOfSpaceException is only possible if session id gets cleaned between
@@ -764,7 +1042,7 @@ public final class TieredBlockStore implements BlockStore {
    * @throws BlockDoesNotExistException if this block can not be found
    * @throws IOException if I/O errors occur when removing this block file
    */
-  private void removeBlockInternal(long sessionId, long blockId, BlockStoreLocation location)
+  protected void removeBlockInternal(long sessionId, long blockId, BlockStoreLocation location)
       throws InvalidWorkerStateException, BlockDoesNotExistException, IOException {
     long lockId = mLockManager.lockBlock(sessionId, blockId, BlockLockType.WRITE);
     try {
@@ -802,6 +1080,15 @@ public final class TieredBlockStore implements BlockStore {
    */
   @Override
   public void updatePinnedInodes(Set<Long> inodes) {
+    if (!mSimulate) {
+      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+        if (entry.getKey() != mEvictorType) {
+          entry.getValue().updatePinnedInodes(inodes);
+        }
+      }
+    }
     synchronized (mPinnedInodes) {
       mPinnedInodes.clear();
       mPinnedInodes.addAll(Preconditions.checkNotNull(inodes));
@@ -811,7 +1098,7 @@ public final class TieredBlockStore implements BlockStore {
   /**
    * A wrapper on necessary info after a move block operation.
    */
-  private static class MoveBlockResult {
+  protected static class MoveBlockResult {
     /** Whether this move operation succeeds. */
     private final boolean mSuccess;
     /** Size of this block in bytes. */
@@ -863,6 +1150,28 @@ public final class TieredBlockStore implements BlockStore {
      */
     BlockStoreLocation getDstLocation() {
       return mDstLocation;
+    }
+  }
+
+  /**
+   * Reset evictor in a fixed interval.
+   */
+  class EvictorCheckingThread implements Runnable {
+    /**
+     * Create a new instance of {@link EvictorCheckingThread}.
+     */
+    public EvictorCheckingThread() {}
+
+    @Override
+    public void run() {
+      while (true) {
+        try {
+          Thread.sleep(60000);
+        } catch (InterruptedException e) {
+          e.printStackTrace();
+        }
+        resetEvictor();
+      }
     }
   }
 }
