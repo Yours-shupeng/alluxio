@@ -191,19 +191,19 @@ public class TieredBlockStore implements BlockStore {
   private void createSimulateBlockStores() {
     if (mEvictorType != EvictorType.LRU) {
       mSimulateBlockStore.put(EvictorType.LRU,
-          new ShadowBlockStore(mMetaManager, Collections.<Long>emptySet(), mEvictorType));
+          new ShadowBlockStore(mMetaManager, Collections.<Long>emptySet(), EvictorType.LRU));
     }
     if (mEvictorType != EvictorType.LRFU) {
       mSimulateBlockStore.put(EvictorType.LRFU,
-          new ShadowBlockStore(mMetaManager, Collections.<Long>emptySet(), mEvictorType));
+          new ShadowBlockStore(mMetaManager, Collections.<Long>emptySet(), EvictorType.LRFU));
     }
     if (mEvictorType != EvictorType.LIRS) {
       mSimulateBlockStore.put(EvictorType.LIRS,
-          new ShadowBlockStore(mMetaManager, Collections.<Long>emptySet(), mEvictorType));
+          new ShadowBlockStore(mMetaManager, Collections.<Long>emptySet(), EvictorType.LIRS));
     }
     if (mEvictorType != EvictorType.ARC) {
       mSimulateBlockStore.put(EvictorType.ARC,
-          new ShadowBlockStore(mMetaManager, Collections.<Long>emptySet(), mEvictorType));
+          new ShadowBlockStore(mMetaManager, Collections.<Long>emptySet(), EvictorType.ARC));
     }
   }
 
@@ -255,6 +255,7 @@ public class TieredBlockStore implements BlockStore {
         for (int i = 1; i < mStorageTierAssoc.size(); i++) {
           bytesBelow += store.getAliasWriteBytes(mStorageTierAssoc.getAlias(i));
         }
+        LOG.info("Evictor {} total write {} bytes.", type, bytesBelow);
         if (bytesBelow < bytesWrittenBelow) {
           bytesWrittenBelow = bytesBelow;
           candidateEvictorType = type;
