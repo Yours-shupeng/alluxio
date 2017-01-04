@@ -413,9 +413,11 @@ public class TieredBlockStore implements BlockStore {
       }
     }
     BlockStoreLocation loc = commitBlockInternal(sessionId, blockId);
-    synchronized (mBlockStoreEventListeners) {
-      for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
-        listener.onCommitBlock(sessionId, blockId, loc);
+    try (LockResource r = new LockResource(mMetadataReadLock)) {
+      synchronized (mBlockStoreEventListeners) {
+        for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
+          listener.onCommitBlock(sessionId, blockId, loc);
+        }
       }
     }
   }
@@ -433,9 +435,11 @@ public class TieredBlockStore implements BlockStore {
       }
     }
     abortBlockInternal(sessionId, blockId);
-    synchronized (mBlockStoreEventListeners) {
-      for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
-        listener.onAbortBlock(sessionId, blockId);
+    try (LockResource r = new LockResource(mMetadataReadLock)) {
+      synchronized (mBlockStoreEventListeners) {
+        for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
+          listener.onAbortBlock(sessionId, blockId);
+        }
       }
     }
   }
@@ -490,10 +494,12 @@ public class TieredBlockStore implements BlockStore {
     for (int i = 0; i < MAX_RETRIES + 1; i++) {
       MoveBlockResult moveResult = moveBlockInternal(sessionId, blockId, oldLocation, newLocation);
       if (moveResult.getSuccess()) {
-        synchronized (mBlockStoreEventListeners) {
-          for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
-            listener.onMoveBlockByClient(sessionId, blockId, moveResult.getSrcLocation(),
-                moveResult.getDstLocation());
+        try (LockResource r = new LockResource(mMetadataReadLock)) {
+          synchronized (mBlockStoreEventListeners) {
+            for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
+              listener.onMoveBlockByClient(sessionId, blockId, moveResult.getSrcLocation(),
+                      moveResult.getDstLocation());
+            }
           }
         }
         return;
@@ -525,9 +531,11 @@ public class TieredBlockStore implements BlockStore {
       }
     }
     removeBlockInternal(sessionId, blockId, location);
-    synchronized (mBlockStoreEventListeners) {
-      for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
-        listener.onRemoveBlockByClient(sessionId, blockId);
+    try (LockResource r = new LockResource(mMetadataReadLock)) {
+      synchronized (mBlockStoreEventListeners) {
+        for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
+          listener.onRemoveBlockByClient(sessionId, blockId);
+        }
       }
     }
   }
@@ -557,9 +565,11 @@ public class TieredBlockStore implements BlockStore {
     if (!hasBlock) {
       throw new BlockDoesNotExistException(ExceptionMessage.NO_BLOCK_ID_FOUND, blockId);
     }
-    synchronized (mBlockStoreEventListeners) {
-      for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
-        listener.onAccessBlock(sessionId, blockId);
+    try (LockResource r = new LockResource(mMetadataReadLock)) {
+      synchronized (mBlockStoreEventListeners) {
+        for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
+          listener.onAccessBlock(sessionId, blockId);
+        }
       }
     }
   }
@@ -870,9 +880,11 @@ public class TieredBlockStore implements BlockStore {
         LOG.info("Failed to evict blockId {}, it could be already deleted", blockInfo.getFirst());
         continue;
       }
-      synchronized (mBlockStoreEventListeners) {
-        for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
-          listener.onRemoveBlockByWorker(sessionId, blockInfo.getFirst());
+      try (LockResource r = new LockResource(mMetadataReadLock)) {
+        synchronized (mBlockStoreEventListeners) {
+          for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
+            listener.onRemoveBlockByWorker(sessionId, blockInfo.getFirst());
+          }
         }
       }
     }
@@ -911,10 +923,12 @@ public class TieredBlockStore implements BlockStore {
           continue;
         }
         if (moveResult.getSuccess()) {
-          synchronized (mBlockStoreEventListeners) {
-            for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
-              listener.onMoveBlockByWorker(sessionId, blockId, moveResult.getSrcLocation(),
-                  newLocation);
+          try (LockResource r = new LockResource(mMetadataReadLock)) {
+            synchronized (mBlockStoreEventListeners) {
+              for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
+                listener.onMoveBlockByWorker(sessionId, blockId, moveResult.getSrcLocation(),
+                        newLocation);
+              }
             }
           }
         }
