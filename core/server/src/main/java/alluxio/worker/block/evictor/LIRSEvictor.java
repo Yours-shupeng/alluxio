@@ -234,6 +234,11 @@ public final class LIRSEvictor extends AbstractEvictor {
         if (mBlockIdToSize == null) {
           LOG.error("Failed due to null!");
         }
+        try {
+          mBlockIdToSize.get(blockId);
+        } catch (Exception e) {
+          LOG.error("Failed to get size of block " + blockId);
+        }
         long blockSize = mBlockIdToSize.get(blockId);
         if (mHIRCache.containsKey(key)) {
           if (mHIRCache.get(key).isMoved()) {
@@ -319,6 +324,11 @@ public final class LIRSEvictor extends AbstractEvictor {
         SpaceContainer spaceContainer = mSpaceManager.get(location);
         if (mBlockIdToSize == null) {
           LOG.error("Failed to move due to null.");
+        }
+        try {
+          mBlockIdToSize.get(blockId);
+        } catch (Exception  e) {
+          LOG.error("Failed to get size of block " + blockId);
         }
         long blockSize = mBlockIdToSize.get(blockId);
         // 1. Blocks in the StorageDir moved from
