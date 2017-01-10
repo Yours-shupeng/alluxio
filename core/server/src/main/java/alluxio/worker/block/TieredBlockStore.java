@@ -273,8 +273,10 @@ public class TieredBlockStore implements BlockStore {
       if (candidateEvictorType != mEvictorType) {
         LOG.info("Switch evictor type from {} to {}.", mEvictorType, candidateEvictorType);
         mEvictorType = candidateEvictorType;
-        mBlockStoreEventListeners.remove(mEvictor);
-        mEvictor = createEvictor(getUpdatedView(), mAllocator, mEvictorType);
+        synchronized (mBlockStoreEventListeners) {
+          mBlockStoreEventListeners.remove(mEvictor);
+          mEvictor = createEvictor(getUpdatedView(), mAllocator, mEvictorType);
+        }
         registerBlockStoreEventListener((BlockStoreEventListener) mEvictor);
       }
       for (int i = 0; i < mStorageTierAssoc.size(); i++) {

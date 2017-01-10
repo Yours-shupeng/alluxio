@@ -450,6 +450,9 @@ public class ARCEvictor extends AbstractEvictor {
         long b1Bytes = mLRUB1Bytes.get(location);
         long b2Bytes = mLRUB2Bytes.get(location);
         long totalBytes = mTotalBytes.get(location);
+        if (mBlockSize == null) {
+          LOG.error("Failed to move due to null.");
+        }
         long blocksize = mBlockSize.get(blockId);
         long t1LimitBytes = mT1LimitBytes.get(location);
         long bytesToReduce;

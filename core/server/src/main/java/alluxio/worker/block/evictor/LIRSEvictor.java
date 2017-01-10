@@ -317,6 +317,9 @@ public final class LIRSEvictor extends AbstractEvictor {
             new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
         Pair<BlockStoreLocation, Long> key = new Pair<BlockStoreLocation, Long>(location, blockId);
         SpaceContainer spaceContainer = mSpaceManager.get(location);
+        if (mBlockIdToSize == null) {
+          LOG.error("Failed to move due to null.");
+        }
         long blockSize = mBlockIdToSize.get(blockId);
         // 1. Blocks in the StorageDir moved from
         if (location.belongsTo(oldLocation)) {
