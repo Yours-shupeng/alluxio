@@ -11,6 +11,7 @@
 
 package alluxio.worker.block;
 
+import alluxio.Constants;
 import alluxio.exception.BlockAlreadyExistsException;
 import alluxio.exception.BlockDoesNotExistException;
 import alluxio.exception.ExceptionMessage;
@@ -19,9 +20,12 @@ import alluxio.exception.WorkerOutOfSpaceException;
 import alluxio.resource.LockResource;
 import alluxio.worker.block.evictor.EvictorType;
 import alluxio.worker.block.meta.BlockMeta;
+import alluxio.worker.block.meta.StorageDir;
 import alluxio.worker.block.meta.TempBlockMeta;
 
 import com.google.common.base.Throwables;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Set;
@@ -30,6 +34,7 @@ import java.util.Set;
  * Block store only contains metadata operations.
  */
 public class ShadowBlockStore extends TieredBlockStore {
+  private static final Logger LOG = LoggerFactory.getLogger(Constants.LOGGER_TYPE);
 
   /**
    * Create an instance of ShadowBlockStore.
@@ -83,6 +88,9 @@ public class ShadowBlockStore extends TieredBlockStore {
         mAliasWriteBytes.put(loc.tierAlias(), originWriteBytes + tempBlockMeta.getBlockSize());
       }
       try (LockResource r = new LockResource(mMetadataWriteLock)) {
+        StorageDir dir = tempBlockMeta.getParentDir();
+        LOG.info("{}: {} bytes left in the dir, total {} bytes", mEvictorType,
+                dir.getAvailableBytes(), dir.getCapacityBytes());
         mMetaManager.commitTempBlockMeta(tempBlockMeta);
       } catch (BlockAlreadyExistsException | BlockDoesNotExistException
           | WorkerOutOfSpaceException e) {
