@@ -852,8 +852,14 @@ public class TieredBlockStore implements BlockStore {
       }
       // Increase the size of this temp block
       try {
+        if (mSimulate) {
+          LOG.info("{}: block{} request {} bytes, {} left.", mEvictorType, blockId, additionalBytes,
+              tempBlockMeta.getParentDir().getAvailableBytes());
+        }
         mMetaManager.resizeTempBlockMeta(tempBlockMeta,
             tempBlockMeta.getBlockSize() + additionalBytes);
+        LOG.info("{}: {} bytes left.", mEvictorType,
+            tempBlockMeta.getParentDir().getAvailableBytes());
       } catch (InvalidWorkerStateException e) {
         throw Throwables.propagate(e); // we shall never reach here
       }
