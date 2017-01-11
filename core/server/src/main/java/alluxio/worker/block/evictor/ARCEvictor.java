@@ -341,6 +341,15 @@ public class ARCEvictor extends AbstractEvictor {
         }
         while (t2Bytes + b2Bytes > mHistoryBlocksTimes * totalBytes && it2.hasNext()) {
           long blockId = it2.next().getKey();
+          try {
+            long blockSize = mBlockSize.get(blockId);
+          } catch (Exception e) {
+            try {
+              long blockSize = mManagerView.getBlockMeta(blockId).getBlockSize();
+            } catch (BlockDoesNotExistException be) {
+              LOG.warn("Failed to update size of block {}.", blockId);
+            }
+          }
           long blocksize = mBlockSize.get(blockId);
           b2Bytes -= blocksize;
           it2.remove();
@@ -362,8 +371,14 @@ public class ARCEvictor extends AbstractEvictor {
         long b2Bytes = mLRUB2Bytes.get(location);
         long totalBytes = mTotalBytes.get(location);
         long t1LimitBytes = mT1LimitBytes.get(location);
-        if (mBlockSize == null) {
-          LOG.error("Failed due to null!");
+        try {
+          long blockSize = mBlockSize.get(blockId);
+        } catch (Exception e) {
+          try {
+            long blockSize = mManagerView.getBlockMeta(blockId).getBlockSize();
+          } catch (BlockDoesNotExistException be) {
+            LOG.warn("Failed to update size of block {}.", blockId);
+          }
         }
         long blocksize = mBlockSize.get(blockId);
         long adjustSize;
@@ -450,8 +465,14 @@ public class ARCEvictor extends AbstractEvictor {
         long b1Bytes = mLRUB1Bytes.get(location);
         long b2Bytes = mLRUB2Bytes.get(location);
         long totalBytes = mTotalBytes.get(location);
-        if (mBlockSize == null) {
-          LOG.error("Failed to move due to null.");
+        try {
+          long blockSize = mBlockSize.get(blockId);
+        } catch (Exception e) {
+          try {
+            long blockSize = mManagerView.getBlockMeta(blockId).getBlockSize();
+          } catch (BlockDoesNotExistException be) {
+            LOG.warn("Failed to update size of block {}.", blockId);
+          }
         }
         long blocksize = mBlockSize.get(blockId);
         long t1LimitBytes = mT1LimitBytes.get(location);
@@ -500,6 +521,15 @@ public class ARCEvictor extends AbstractEvictor {
         long t2Bytes = mLRUT2Bytes.get(location);
         long b1Bytes = mLRUB1Bytes.get(location);
         long b2Bytes = mLRUB2Bytes.get(location);
+        try {
+          long blockSize = mBlockSize.get(blockId);
+        } catch (Exception e) {
+          try {
+            long blockSize = mManagerView.getBlockMeta(blockId).getBlockSize();
+          } catch (BlockDoesNotExistException be) {
+            LOG.warn("Failed to update size of block {}.", blockId);
+          }
+        }
         long blocksize = mBlockSize.get(blockId);
         Map<Long, Boolean> t1 = mLRUT1.get(location);
         Map<Long, Boolean> t2 = mLRUT2.get(location);

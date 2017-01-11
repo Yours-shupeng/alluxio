@@ -231,13 +231,15 @@ public final class LIRSEvictor extends AbstractEvictor {
             new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
         Pair<BlockStoreLocation, Long> key = new Pair<BlockStoreLocation, Long>(location, blockId);
         SpaceContainer spaceContainer = mSpaceManager.get(location);
-        if (mBlockIdToSize == null) {
-          LOG.error("Failed due to null!");
-        }
         try {
-          mBlockIdToSize.get(blockId);
+          long blockSize = mBlockIdToSize.get(blockId);
         } catch (Exception e) {
-          LOG.error("Failed to get size of block " + blockId);
+          try {
+            long size = mManagerView.getBlockMeta(blockId).getBlockSize();
+            mBlockIdToSize.put(blockId, size);
+          } catch (BlockDoesNotExistException be) {
+            LOG.error("Failed to update size of block {}.", blockId);
+          }
         }
         long blockSize = mBlockIdToSize.get(blockId);
         if (mHIRCache.containsKey(key)) {
@@ -322,13 +324,15 @@ public final class LIRSEvictor extends AbstractEvictor {
             new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
         Pair<BlockStoreLocation, Long> key = new Pair<BlockStoreLocation, Long>(location, blockId);
         SpaceContainer spaceContainer = mSpaceManager.get(location);
-        if (mBlockIdToSize == null) {
-          LOG.error("Failed to move due to null.");
-        }
         try {
-          mBlockIdToSize.get(blockId);
-        } catch (Exception  e) {
-          LOG.error("Failed to get size of block " + blockId);
+          long blockSize = mBlockIdToSize.get(blockId);
+        } catch (Exception e) {
+          try {
+            long size = mManagerView.getBlockMeta(blockId).getBlockSize();
+            mBlockIdToSize.put(blockId, size);
+          } catch (BlockDoesNotExistException be) {
+            LOG.error("Failed to update size of block {}.", blockId);
+          }
         }
         long blockSize = mBlockIdToSize.get(blockId);
         // 1. Blocks in the StorageDir moved from
@@ -362,6 +366,16 @@ public final class LIRSEvictor extends AbstractEvictor {
         BlockStoreLocation location =
             new BlockStoreLocation(tier.getTierViewAlias(), dir.getDirViewIndex());
         SpaceContainer spaceContainer = mSpaceManager.get(location);
+        try {
+          long blockSize = mBlockIdToSize.get(blockId);
+        } catch (Exception e) {
+          try {
+            long size = mManagerView.getBlockMeta(blockId).getBlockSize();
+            mBlockIdToSize.put(blockId, size);
+          } catch (BlockDoesNotExistException be) {
+            LOG.error("Failed to update size of block {}.", blockId);
+          }
+        }
         long blockSize = mBlockIdToSize.get(blockId);
         Pair<BlockStoreLocation, Long> key = new Pair<BlockStoreLocation, Long>(location, blockId);
         if (mHIRCache.containsKey(key)) {
@@ -424,6 +438,16 @@ public final class LIRSEvictor extends AbstractEvictor {
       } else if (blockType.isHIR() || !blockType.isResident()) {
         it.remove();
       } else if (blockType.isLIR()) {
+        try {
+          long blockSize = mBlockIdToSize.get(entry.getKey().getSecond());
+        } catch (Exception e) {
+          try {
+            long size = mManagerView.getBlockMeta(entry.getKey().getSecond()).getBlockSize();
+            mBlockIdToSize.put(entry.getKey().getSecond(), size);
+          } catch (BlockDoesNotExistException be) {
+            LOG.error("Failed to update size of block {}.", entry.getKey().getSecond());
+          }
+        }
         long blockSize = mBlockIdToSize.get(entry.getKey().getSecond());
         spaceContainer.moveBlockFromLIRToHIR(blockSize);
         mHIRCache.put(entry.getKey(), BlockType.HIR);
