@@ -91,7 +91,7 @@ public class ShadowBlockStore extends TieredBlockStore {
         StorageDir dir = tempBlockMeta.getParentDir();
         LOG.info("{}: {} bytes left in the dir, total {} bytes", mEvictorType,
                 dir.getAvailableBytes(), dir.getCapacityBytes());
-        mMetaManager.commitTempBlockMeta(tempBlockMeta);
+        mMetaManager.commitShadowTempBlockMeta(tempBlockMeta);
       } catch (BlockAlreadyExistsException | BlockDoesNotExistException
           | WorkerOutOfSpaceException e) {
         throw Throwables.propagate(e); // we shall never reach here

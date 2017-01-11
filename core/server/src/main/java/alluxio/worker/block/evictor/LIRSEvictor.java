@@ -235,11 +235,8 @@ public final class LIRSEvictor extends AbstractEvictor {
           long blockSize = mBlockIdToSize.get(blockId);
         } catch (Exception e) {
           try {
-            BlockMeta meta = mManagerView.getBlockMeta(blockId);
-            if (meta != null) {
-              long size = meta.getBlockSize();
-              mBlockIdToSize.put(blockId, size);
-            }
+            long blockSize = mManagerView.getBlockSize(blockId);
+            mBlockIdToSize.put(blockId, blockSize);
           } catch (BlockDoesNotExistException be) {
             LOG.warn("Failed to update size of block {}.", blockId);
           }
@@ -331,11 +328,8 @@ public final class LIRSEvictor extends AbstractEvictor {
           long blockSize = mBlockIdToSize.get(blockId);
         } catch (Exception e) {
           try {
-            BlockMeta meta = mManagerView.getBlockMeta(blockId);
-            if (meta != null) {
-              long size = meta.getBlockSize();
-              mBlockIdToSize.put(blockId, size);
-            }
+            long blockSize = mManagerView.getBlockSize(blockId);
+            mBlockIdToSize.put(blockId, blockSize);
           } catch (BlockDoesNotExistException be) {
             LOG.warn("Failed to update size of block {}.", blockId);
           }
@@ -376,11 +370,8 @@ public final class LIRSEvictor extends AbstractEvictor {
           long blockSize = mBlockIdToSize.get(blockId);
         } catch (Exception e) {
           try {
-            BlockMeta meta = mManagerView.getBlockMeta(blockId);
-            if (meta != null) {
-              long size = meta.getBlockSize();
-              mBlockIdToSize.put(blockId, size);
-            }
+            long blockSize = mManagerView.getBlockSize(blockId);
+            mBlockIdToSize.put(blockId, blockSize);
           } catch (BlockDoesNotExistException be) {
             LOG.warn("Failed to update size of block {}.", blockId);
           }
@@ -451,11 +442,8 @@ public final class LIRSEvictor extends AbstractEvictor {
           long blockSize = mBlockIdToSize.get(entry.getKey().getSecond());
         } catch (Exception e) {
           try {
-            BlockMeta meta = mManagerView.getBlockMeta(entry.getKey().getSecond());
-            if (meta != null) {
-              long size = meta.getBlockSize();
-              mBlockIdToSize.put(entry.getKey().getSecond(), size);
-            }
+            long blockSize = mManagerView.getBlockSize(entry.getKey().getSecond());
+            mBlockIdToSize.put(entry.getKey().getSecond(), blockSize);
           } catch (BlockDoesNotExistException be) {
             LOG.warn("Failed to update size of block {}.", entry.getKey().getSecond());
           }

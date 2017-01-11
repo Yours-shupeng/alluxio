@@ -143,6 +143,30 @@ public final class BlockMetadataManager {
   }
 
   /**
+   * Commits a temp block.
+   *
+   * @param tempBlockMeta the metadata of the temp block to commit
+   * @throws WorkerOutOfSpaceException when no more space left to hold the block
+   * @throws BlockAlreadyExistsException when the block already exists in committed blocks
+   * @throws BlockDoesNotExistException when temp block can not be found
+   */
+  public void commitShadowTempBlockMeta(TempBlockMeta tempBlockMeta)
+      throws WorkerOutOfSpaceException, BlockAlreadyExistsException, BlockDoesNotExistException {
+    long blockId = tempBlockMeta.getBlockId();
+    if (hasBlockMeta(blockId)) {
+      BlockMeta blockMeta = getBlockMeta(blockId);
+      throw new BlockAlreadyExistsException(ExceptionMessage.ADD_EXISTING_BLOCK.getMessage(blockId,
+          blockMeta.getBlockLocation().tierAlias()));
+    }
+    Preconditions.checkNotNull(tempBlockMeta);
+    BlockMeta block = new BlockMeta(tempBlockMeta.getBlockId(), tempBlockMeta.getBlockSize(),
+        tempBlockMeta.getParentDir());
+    StorageDir dir = tempBlockMeta.getParentDir();
+    dir.removeTempBlockMeta(tempBlockMeta);
+    dir.addBlockMeta(block);
+  }
+
+  /**
    * Cleans up the metadata of the given temp block ids.
    *
    * @param sessionId the id of the client associated with the temp blocks
@@ -400,8 +424,7 @@ public final class BlockMetadataManager {
    */
   @Deprecated
   public BlockMeta moveBlockMeta(BlockMeta blockMeta, BlockStoreLocation newLocation)
-      throws BlockDoesNotExistException, BlockAlreadyExistsException,
-             WorkerOutOfSpaceException {
+      throws BlockDoesNotExistException, BlockAlreadyExistsException, WorkerOutOfSpaceException {
     // If existing location belongs to the target location, simply return the current block meta.
     BlockStoreLocation oldLocation = blockMeta.getBlockLocation();
     if (oldLocation.belongsTo(newLocation)) {
