@@ -39,6 +39,7 @@ import alluxio.worker.block.io.BlockWriter;
 import alluxio.worker.block.io.LocalFileBlockReader;
 import alluxio.worker.block.io.LocalFileBlockWriter;
 import alluxio.worker.block.meta.BlockMeta;
+import alluxio.worker.block.meta.StorageDir;
 import alluxio.worker.block.meta.StorageDirView;
 import alluxio.worker.block.meta.TempBlockMeta;
 
@@ -502,7 +503,7 @@ public class TieredBlockStore implements BlockStore {
           synchronized (mBlockStoreEventListeners) {
             for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
               listener.onMoveBlockByClient(sessionId, blockId, moveResult.getSrcLocation(),
-                      moveResult.getDstLocation());
+                  moveResult.getDstLocation());
             }
           }
         }
@@ -765,6 +766,11 @@ public class TieredBlockStore implements BlockStore {
       FileUtils.move(srcPath, dstPath);
 
       try (LockResource r = new LockResource(mMetadataWriteLock)) {
+        if (mSimulate) {
+          StorageDir dir = tempBlockMeta.getParentDir();
+          LOG.info("{}: {} bytes left in the dir, total {} bytes", mEvictorType,
+              dir.getAvailableBytes(), dir.getCapacityBytes());
+        }
         mMetaManager.commitTempBlockMeta(tempBlockMeta);
       } catch (BlockAlreadyExistsException | BlockDoesNotExistException
           | WorkerOutOfSpaceException e) {
@@ -803,6 +809,10 @@ public class TieredBlockStore implements BlockStore {
       if (dirView == null) {
         // Allocator fails to find a proper place for this new block.
         return null;
+      }
+      if (mSimulate) {
+        LOG.info("{}: create block {}, {} bytes left.", mEvictorType, blockId,
+            dirView.getAvailableBytes());
       }
       // TODO(carson): Add tempBlock to corresponding storageDir and remove the use of
       // StorageDirView.createTempBlockMeta.
@@ -931,7 +941,7 @@ public class TieredBlockStore implements BlockStore {
             synchronized (mBlockStoreEventListeners) {
               for (BlockStoreEventListener listener : mBlockStoreEventListeners) {
                 listener.onMoveBlockByWorker(sessionId, blockId, moveResult.getSrcLocation(),
-                        newLocation);
+                    newLocation);
               }
             }
           }
