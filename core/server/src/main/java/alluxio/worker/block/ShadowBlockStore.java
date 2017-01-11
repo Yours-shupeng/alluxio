@@ -20,7 +20,6 @@ import alluxio.exception.WorkerOutOfSpaceException;
 import alluxio.resource.LockResource;
 import alluxio.worker.block.evictor.EvictorType;
 import alluxio.worker.block.meta.BlockMeta;
-import alluxio.worker.block.meta.StorageDir;
 import alluxio.worker.block.meta.TempBlockMeta;
 
 import com.google.common.base.Throwables;
@@ -88,9 +87,6 @@ public class ShadowBlockStore extends TieredBlockStore {
         mAliasWriteBytes.put(loc.tierAlias(), originWriteBytes + tempBlockMeta.getBlockSize());
       }
       try (LockResource r = new LockResource(mMetadataWriteLock)) {
-        StorageDir dir = tempBlockMeta.getParentDir();
-        LOG.info("{}: {} bytes left in the dir, total {} bytes", mEvictorType,
-                dir.getAvailableBytes(), dir.getCapacityBytes());
         mMetaManager.commitShadowTempBlockMeta(tempBlockMeta);
       } catch (BlockAlreadyExistsException | BlockDoesNotExistException
           | WorkerOutOfSpaceException e) {

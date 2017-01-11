@@ -39,7 +39,6 @@ import alluxio.worker.block.io.BlockWriter;
 import alluxio.worker.block.io.LocalFileBlockReader;
 import alluxio.worker.block.io.LocalFileBlockWriter;
 import alluxio.worker.block.meta.BlockMeta;
-import alluxio.worker.block.meta.StorageDir;
 import alluxio.worker.block.meta.StorageDirView;
 import alluxio.worker.block.meta.TempBlockMeta;
 
@@ -766,11 +765,6 @@ public class TieredBlockStore implements BlockStore {
       FileUtils.move(srcPath, dstPath);
 
       try (LockResource r = new LockResource(mMetadataWriteLock)) {
-        if (mSimulate) {
-          StorageDir dir = tempBlockMeta.getParentDir();
-          LOG.info("{}: {} bytes left in the dir, total {} bytes", mEvictorType,
-              dir.getAvailableBytes(), dir.getCapacityBytes());
-        }
         mMetaManager.commitTempBlockMeta(tempBlockMeta);
       } catch (BlockAlreadyExistsException | BlockDoesNotExistException
           | WorkerOutOfSpaceException e) {
@@ -810,10 +804,6 @@ public class TieredBlockStore implements BlockStore {
         // Allocator fails to find a proper place for this new block.
         return null;
       }
-      if (mSimulate) {
-        LOG.info("{}: create block {}, {} bytes left.", mEvictorType, blockId,
-            dirView.getAvailableBytes());
-      }
       // TODO(carson): Add tempBlock to corresponding storageDir and remove the use of
       // StorageDirView.createTempBlockMeta.
       TempBlockMeta tempBlock = dirView.createTempBlockMeta(sessionId, blockId, initialBlockSize);
@@ -852,14 +842,8 @@ public class TieredBlockStore implements BlockStore {
       }
       // Increase the size of this temp block
       try {
-        if (mSimulate) {
-          LOG.info("{}: block{} request {} bytes, {} left.", mEvictorType, blockId, additionalBytes,
-              tempBlockMeta.getParentDir().getAvailableBytes());
-        }
         mMetaManager.resizeTempBlockMeta(tempBlockMeta,
             tempBlockMeta.getBlockSize() + additionalBytes);
-        LOG.info("{}: {} bytes left.", mEvictorType,
-            tempBlockMeta.getParentDir().getAvailableBytes());
       } catch (InvalidWorkerStateException e) {
         throw Throwables.propagate(e); // we shall never reach here
       }
