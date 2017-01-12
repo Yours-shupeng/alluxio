@@ -362,11 +362,13 @@ public class TieredBlockStore implements BlockStore {
       long initialBlockSize)
       throws BlockAlreadyExistsException, WorkerOutOfSpaceException, IOException {
     if (!mSimulate) {
-      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
-          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
-        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
-        if (entry.getKey() != mEvictorType) {
-          entry.getValue().createBlockMeta(sessionId, blockId, location, initialBlockSize);
+      try (LockResource r = new LockResource(mMetadataReadLock)) {
+        for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+             mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+          Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+          if (entry.getKey() != mEvictorType) {
+            entry.getValue().createBlockMeta(sessionId, blockId, location, initialBlockSize);
+          }
         }
       }
     }
@@ -410,11 +412,13 @@ public class TieredBlockStore implements BlockStore {
   public void commitBlock(long sessionId, long blockId) throws BlockAlreadyExistsException,
       InvalidWorkerStateException, BlockDoesNotExistException, IOException {
     if (!mSimulate) {
-      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
-          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
-        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
-        if (entry.getKey() != mEvictorType) {
-          entry.getValue().commitBlock(sessionId, blockId);
+      try (LockResource r = new LockResource(mMetadataReadLock)) {
+        for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+             mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+          Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+          if (entry.getKey() != mEvictorType) {
+            entry.getValue().commitBlock(sessionId, blockId);
+          }
         }
       }
     }
@@ -432,11 +436,13 @@ public class TieredBlockStore implements BlockStore {
   public void abortBlock(long sessionId, long blockId) throws BlockAlreadyExistsException,
       BlockDoesNotExistException, InvalidWorkerStateException, IOException {
     if (!mSimulate) {
-      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
-          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
-        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
-        if (entry.getKey() != mEvictorType) {
-          entry.getValue().abortBlock(sessionId, blockId);
+      try (LockResource r = new LockResource(mMetadataReadLock)) {
+        for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+             mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+          Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+          if (entry.getKey() != mEvictorType) {
+            entry.getValue().abortBlock(sessionId, blockId);
+          }
         }
       }
     }
@@ -454,11 +460,13 @@ public class TieredBlockStore implements BlockStore {
   public void requestSpace(long sessionId, long blockId, long additionalBytes)
       throws BlockDoesNotExistException, WorkerOutOfSpaceException, IOException {
     if (!mSimulate) {
-      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
-          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
-        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
-        if (entry.getKey() != mEvictorType) {
-          entry.getValue().requestSpace(sessionId, blockId, additionalBytes);
+      try (LockResource r = new LockResource(mMetadataReadLock)) {
+        for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+             mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+          Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+          if (entry.getKey() != mEvictorType) {
+            entry.getValue().requestSpace(sessionId, blockId, additionalBytes);
+          }
         }
       }
     }
@@ -489,11 +497,13 @@ public class TieredBlockStore implements BlockStore {
       throws BlockDoesNotExistException, BlockAlreadyExistsException, InvalidWorkerStateException,
       WorkerOutOfSpaceException, IOException {
     if (!mSimulate) {
-      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
-          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
-        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
-        if (entry.getKey() != mEvictorType) {
-          entry.getValue().moveBlock(sessionId, blockId, oldLocation, newLocation);
+      try (LockResource r = new LockResource(mMetadataReadLock)) {
+        for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+             mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+          Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+          if (entry.getKey() != mEvictorType) {
+            entry.getValue().moveBlock(sessionId, blockId, oldLocation, newLocation);
+          }
         }
       }
     }
@@ -538,11 +548,13 @@ public class TieredBlockStore implements BlockStore {
   public void removeBlock(long sessionId, long blockId, BlockStoreLocation location)
       throws InvalidWorkerStateException, BlockDoesNotExistException, IOException {
     if (!mSimulate) {
-      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
-          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
-        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
-        if (entry.getKey() != mEvictorType) {
-          entry.getValue().removeBlock(sessionId, blockId, location);
+      try (LockResource r = new LockResource(mMetadataReadLock)) {
+        for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+             mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+          Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+          if (entry.getKey() != mEvictorType) {
+            entry.getValue().removeBlock(sessionId, blockId, location);
+          }
         }
       }
     }
@@ -559,11 +571,13 @@ public class TieredBlockStore implements BlockStore {
   @Override
   public void accessBlock(long sessionId, long blockId) throws BlockDoesNotExistException {
     if (!mSimulate) {
-      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
-          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
-        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
-        if (entry.getKey() != mEvictorType) {
-          entry.getValue().accessBlock(sessionId, blockId);
+      try (LockResource r = new LockResource(mMetadataReadLock)) {
+        for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+             mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+          Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+          if (entry.getKey() != mEvictorType) {
+            entry.getValue().accessBlock(sessionId, blockId);
+          }
         }
       }
     }
@@ -594,11 +608,13 @@ public class TieredBlockStore implements BlockStore {
   public void freeSpace(long sessionId, long availableBytes, BlockStoreLocation location)
       throws BlockDoesNotExistException, WorkerOutOfSpaceException, IOException {
     if (!mSimulate) {
-      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
-          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
-        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
-        if (entry.getKey() != mEvictorType) {
-          entry.getValue().freeSpace(sessionId, availableBytes, location);
+      try (LockResource r = new LockResource(mMetadataReadLock)) {
+        for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+             mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+          Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+          if (entry.getKey() != mEvictorType) {
+            entry.getValue().freeSpace(sessionId, availableBytes, location);
+          }
         }
       }
     }
@@ -609,11 +625,13 @@ public class TieredBlockStore implements BlockStore {
   @Override
   public void cleanupSession(long sessionId) {
     if (!mSimulate) {
-      for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
-          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
-        Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
-        if (entry.getKey() != mEvictorType) {
-          entry.getValue().cleanupSession(sessionId);
+      try (LockResource r = new LockResource(mMetadataReadLock)) {
+        for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
+             mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+          Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
+          if (entry.getKey() != mEvictorType) {
+            entry.getValue().cleanupSession(sessionId);
+          }
         }
       }
     }
