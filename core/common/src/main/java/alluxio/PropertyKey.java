@@ -169,6 +169,7 @@ public enum PropertyKey {
   WORKER_EVICTOR_CLASS(Name.WORKER_EVICTOR_CLASS, "alluxio.worker.block.evictor.LRUEvictor"),
   WORKER_EVICTOR_TYPE(Name.WORKER_EVICTOR_TYPE, "LRU"),
   WORKER_EVICTOR_AUTO_ENABLED(Name.WORKER_EVICTOR_AUTO_ENABLED, true),
+  WORKER_EVICTOR_AUTO_CHECK_SECONDS(Name.WORKER_EVICTOR_AUTO_CHECK_SECONDS, 60),
   WORKER_EVICTOR_LRFU_ATTENUATION_FACTOR(Name.WORKER_EVICTOR_LRFU_ATTENUATION_FACTOR, 2.0),
   WORKER_EVICTOR_LRFU_STEP_FACTOR(Name.WORKER_EVICTOR_LRFU_STEP_FACTOR, 0.25),
   WORKER_EVICTOR_LIRS_HIR_PERCENT(Name.WORKER_EVICTOR_LIRS_HIR_PERCENT, 0.25),
@@ -527,6 +528,8 @@ public enum PropertyKey {
     public static final String WORKER_EVICTOR_CLASS = "alluxio.worker.evictor.class";
     public static final String WORKER_EVICTOR_TYPE = "alluxio.worker.evictor.type";
     public static final String WORKER_EVICTOR_AUTO_ENABLED = "alluxio.worker.evictor.auto.enabled";
+    public static final String WORKER_EVICTOR_AUTO_CHECK_SECONDS =
+        "alluxio.worker.evictor.auto.check.seconds";
     public static final String WORKER_EVICTOR_LRFU_ATTENUATION_FACTOR =
         "alluxio.worker.evictor.lrfu.attenuation.factor";
     public static final String WORKER_EVICTOR_LRFU_STEP_FACTOR =

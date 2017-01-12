@@ -175,11 +175,13 @@ public final class LIRSEvictor extends AbstractEvictor {
 
   @Override
   public void onAccessBlock(long sessionId, long blockId) {
+    System.out.println("Access block " + blockId);
     updateOnAccess(blockId);
   }
 
   @Override
   public void onCommitBlock(long sessionId, long blockId, BlockStoreLocation location) {
+    System.out.println("Commit block " + blockId + " in " + location.tierAlias());
     try {
       updateOnCommit(blockId, location);
     } catch (BlockDoesNotExistException e) {
@@ -190,22 +192,28 @@ public final class LIRSEvictor extends AbstractEvictor {
   @Override
   public void onMoveBlockByClient(long sessionId, long blockId, BlockStoreLocation oldLocation,
       BlockStoreLocation newLocation) {
+    System.out.println("Move block " + blockId + " from " + oldLocation.tierAlias() + " to "
+        + newLocation.tierAlias());
     updateOnMove(blockId, oldLocation, newLocation);
   }
 
   @Override
   public void onMoveBlockByWorker(long sessionId, long blockId, BlockStoreLocation oldLocation,
       BlockStoreLocation newLocation) {
+    System.out.println("Move block " + blockId + " from " + oldLocation.tierAlias() + " to "
+            + newLocation.tierAlias());
     updateOnMove(blockId, oldLocation, newLocation);
   }
 
   @Override
   public void onRemoveBlockByClient(long sessionId, long blockId) {
+    System.out.println("Remove block " + blockId);
     updateOnRemove(blockId);
   }
 
   @Override
   public void onRemoveBlockByWorker(long sessionId, long blockId) {
+    System.out.println("Remove block " + blockId);
     updateOnRemove(blockId);
   }
 

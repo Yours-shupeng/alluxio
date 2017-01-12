@@ -275,14 +275,11 @@ public class ARCEvictor extends AbstractEvictor {
 
   @Override
   public void onAccessBlock(long sessionId, long blockId) {
-    System.out.println("access block " + blockId);
-    System.out.println("Access increment");
     updateOnAccess(blockId);
   }
 
   @Override
   public void onCommitBlock(long sessionId, long blockId, BlockStoreLocation location) {
-    System.out.println("commit block " + blockId);
     try {
       updateOnCommit(blockId, location);
     } catch (BlockDoesNotExistException e) {
@@ -294,28 +291,22 @@ public class ARCEvictor extends AbstractEvictor {
   @Override
   public void onMoveBlockByClient(long sessionId, long blockId, BlockStoreLocation oldLocation,
       BlockStoreLocation newLocation) {
-    System.out.println("move block " + blockId + " from tier " + oldLocation.tierAlias()
-        + " to tier " + newLocation.tierAlias());
     updateOnMove(blockId, oldLocation, newLocation);
   }
 
   @Override
   public void onMoveBlockByWorker(long sessionId, long blockId, BlockStoreLocation oldLocation,
       BlockStoreLocation newLocation) {
-    System.out.println("move block " + blockId + " from tier " + oldLocation.tierAlias()
-        + " to tier " + newLocation.tierAlias());
     updateOnMove(blockId, oldLocation, newLocation);
   }
 
   @Override
   public void onRemoveBlockByClient(long sessionId, long blockId) {
-    System.out.println("remove block " + blockId);
     updateOnRemove(blockId);
   }
 
   @Override
   public void onRemoveBlockByWorker(long sessionId, long blockId) {
-    System.out.println("remove block " + blockId);
     updateOnRemove(blockId);
   }
 

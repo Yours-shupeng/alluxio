@@ -1172,7 +1172,7 @@ public class TieredBlockStore implements BlockStore {
     public void run() {
       while (true) {
         try {
-          Thread.sleep(60000);
+          Thread.sleep(Configuration.getInt(PropertyKey.WORKER_EVICTOR_AUTO_CHECK_SECONDS) * 1000L);
         } catch (InterruptedException e) {
           e.printStackTrace();
         }
