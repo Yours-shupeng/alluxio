@@ -431,7 +431,7 @@ public class ARCEvictor extends AbstractEvictor {
           long t1Bytes = mLRUT1Bytes.get(newLocation);
           long b1Bytes = mLRUB1Bytes.get(newLocation);
           long totalBytes = mTotalBytes.get(newLocation);
-          long blocksize = mManagerView.getBlockMeta(blockId).getBlockSize();
+          long blocksize = mManagerView.getBlockSize(blockId);
           Map<Long, Boolean> t1 = mLRUT1.get(newLocation);
           t1.put(blockId, UNUSED_MAP_VALUE);
           t1Bytes += blocksize;

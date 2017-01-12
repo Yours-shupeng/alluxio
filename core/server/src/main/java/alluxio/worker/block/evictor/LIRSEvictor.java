@@ -16,7 +16,6 @@ import alluxio.Constants;
 import alluxio.PropertyKey;
 import alluxio.collections.Pair;
 import alluxio.exception.BlockDoesNotExistException;
-import alluxio.exception.ExceptionMessage;
 import alluxio.worker.block.BlockMetadataManagerView;
 import alluxio.worker.block.BlockStoreLocation;
 import alluxio.worker.block.allocator.Allocator;
@@ -295,12 +294,7 @@ public final class LIRSEvictor extends AbstractEvictor {
           Pair<BlockStoreLocation, Long> key =
               new Pair<BlockStoreLocation, Long>(dirLocation, blockId);
           SpaceContainer spaceContainer = mSpaceManager.get(dirLocation);
-          BlockMeta blockMeta = mManagerView.getBlockMeta(blockId);
-          if (blockMeta == null) {
-            throw new BlockDoesNotExistException(ExceptionMessage.BLOCK_NOT_FOUND_AT_LOCATION,
-                blockId, location);
-          }
-          long blockSize = blockMeta.getBlockSize();
+          long blockSize = mManagerView.getBlockSize(blockId);
           mBlockIdToSize.put(blockId, blockSize);
           if (spaceContainer.getLIRBytes()
               + blockSize <= (dir.getAvailableBytes() + dir.getEvitableBytes()) * mLIRPercent) {
