@@ -251,6 +251,7 @@ public class TieredBlockStore implements BlockStore {
     }
     EvictorType candidateEvictorType = null;
     try (LockResource r = new LockResource(mMetadataWriteLock)) {
+      System.out.println("Start of reset!!!");
       LOG.info("Start of reset!!!");
       long bytesWrittenBelow = Long.MAX_VALUE;
       for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
@@ -284,6 +285,7 @@ public class TieredBlockStore implements BlockStore {
         mAliasWriteBytes.put(mStorageTierAssoc.getAlias(i), 0L);
       }
       createSimulateBlockStores();
+      System.out.println("End of reset!!!");
       LOG.info("End of reset!!!");
     }
   }
