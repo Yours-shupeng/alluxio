@@ -497,6 +497,16 @@ public class TieredBlockStore implements BlockStore {
         }
       }
     }
+    long lockId = lockBlock(sessionId, blockId);
+    try {
+      BlockMeta meta = getBlockMeta(sessionId, blockId, lockId);
+      if (meta.getBlockLocation().belongsTo(newLocation)) {
+        return;
+      }
+    } finally {
+      unlockBlock(lockId);
+    }
+    // Execute the block move if necessary
     for (int i = 0; i < MAX_RETRIES + 1; i++) {
       MoveBlockResult moveResult = moveBlockInternal(sessionId, blockId, oldLocation, newLocation);
       if (moveResult.getSuccess()) {
