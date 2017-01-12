@@ -214,6 +214,59 @@ public class TieredBlockStore implements BlockStore {
   }
 
   /**
+   * Reset the evictor for the current block store.
+   *
+   * @param evictorType type of evictor
+   */
+  public void setEvictor(EvictorType evictorType) {
+    if (mSimulate) {
+      try (LockResource r = new LockResource(mMetadataWriteLock)) {
+        synchronized (mBlockStoreEventListeners) {
+          mBlockStoreEventListeners.remove(mEvictor);
+          mEvictorType = evictorType;
+          mEvictor = createEvictor(getUpdatedView(), mAllocator, evictorType);
+          mBlockStoreEventListeners.add((BlockStoreEventListener) mEvictor);
+        }
+      }
+      return;
+    }
+    synchronized (mBlockStoreEventListeners) {
+      mBlockStoreEventListeners.remove(mEvictor);
+      mEvictorType = evictorType;
+      mEvictor = createEvictor(getUpdatedView(), mAllocator, evictorType);
+      mBlockStoreEventListeners.add((BlockStoreEventListener) mEvictor);
+    }
+  }
+
+  /**
+   * Return evictor type of the current block store.
+   *
+   * @return evictor type
+   */
+  public EvictorType getEvictorType() {
+    return mEvictorType;
+  }
+
+  /**
+   * Reset the read and write metrics for automatic evictor switch.
+   */
+  public void resetWRMetrics() {
+    if (mSimulate) {
+      try (LockResource r = new LockResource(mMetadataWriteLock)) {
+        for (int i = 0; i < mStorageTierAssoc.size(); i++) {
+          mAliasReadBytes.put(mStorageTierAssoc.getAlias(i), 0L);
+          mAliasWriteBytes.put(mStorageTierAssoc.getAlias(i), 0L);
+        }
+      }
+      return;
+    }
+    for (int i = 0; i < mStorageTierAssoc.size(); i++) {
+      mAliasReadBytes.put(mStorageTierAssoc.getAlias(i), 0L);
+      mAliasWriteBytes.put(mStorageTierAssoc.getAlias(i), 0L);
+    }
+  }
+
+  /**
    * Create evictor according to type of evictor.
    *
    * @param view instance of {@link BlockMetadataManagerView}
@@ -255,7 +308,7 @@ public class TieredBlockStore implements BlockStore {
       LOG.info("Start of reset!!!");
       long bytesWrittenBelow = Long.MAX_VALUE;
       for (Iterator<Map.Entry<EvictorType, TieredBlockStore>> it =
-          mSimulateBlockStore.entrySet().iterator(); it.hasNext();) {
+           mSimulateBlockStore.entrySet().iterator(); it.hasNext(); ) {
         Map.Entry<EvictorType, TieredBlockStore> entry = it.next();
         EvictorType type = entry.getKey();
         TieredBlockStore store = entry.getValue();
@@ -273,18 +326,15 @@ public class TieredBlockStore implements BlockStore {
       }
       if (candidateEvictorType != mEvictorType) {
         LOG.info("Switch evictor type from {} to {}.", mEvictorType, candidateEvictorType);
-        mEvictorType = candidateEvictorType;
-        synchronized (mBlockStoreEventListeners) {
-          mBlockStoreEventListeners.remove((BlockStoreEventListener) mEvictor);
-          mEvictor = createEvictor(getUpdatedView(), mAllocator, mEvictorType);
-          mBlockStoreEventListeners.add((BlockStoreEventListener) mEvictor);
+        TieredBlockStore blockStore = mSimulateBlockStore.get(candidateEvictorType);
+        blockStore.setEvictor(mEvictorType);
+        setEvictor(candidateEvictorType);
+        mSimulateBlockStore.put(mEvictorType, this);
+        mSimulateBlockStore.put(blockStore.getEvictorType(), blockStore);
+        for (TieredBlockStore store : mSimulateBlockStore.values()) {
+          store.resetWRMetrics();
         }
       }
-      for (int i = 0; i < mStorageTierAssoc.size(); i++) {
-        mAliasReadBytes.put(mStorageTierAssoc.getAlias(i), 0L);
-        mAliasWriteBytes.put(mStorageTierAssoc.getAlias(i), 0L);
-      }
-      createSimulateBlockStores();
       System.out.println("End of reset!!!");
       LOG.info("End of reset!!!");
     }
